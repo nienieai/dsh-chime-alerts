@@ -1,0 +1,8 @@
+# dsh-chime-alerts bundle layer — applied when a profile lists this bundle
+# （package.json 的 dsh.bundle.patch 指向本文件）。
+# `name` 是包名（从 profile 的 node_modules 解析），不是相对路径。
+# 注意：目前静态安装只有宿主半（事件记录 + 系统蜂鸣）；
+# 浏览器声音与设置页走动态安装（lib/host.js + lib/client.js）。
+- insert:
+    - id: chime
+      name: dsh-chime-alerts

@@ -1,0 +1,212 @@
+// 宿主半逻辑冒烟测试：node tools/test-host.mjs（Node 可跑，无需 DSH）
+// 用假 ctx / harness 驱动 host.js，断言九类事件的检测、节流、拉取过滤与蜂鸣。
+import { readFileSync } from 'node:fs'
+
+const source = readFileSync(new URL('../lib/host.js', import.meta.url), 'utf8')
+
+let failures = 0
+const ok = (cond, label) => {
+  if (cond) console.log('PASS', label)
+  else { failures++; console.log('FAIL', label) }
+}
+
+function makeEnv() {
+  const listeners = {}
+  const handlers = {}
+  const spawns = []
+  const jobDoneFns = []
+  const fsFiles = new Map()
+  const fsMock = {
+    resolve: async (path, opts) => ({ key: 't:' + (opts && opts.cwd ? opts.cwd + '/' : '') + path }),
+    processPath: (t) => t.key.slice(2),
+    readText: async (t) => { const v = fsFiles.get(t.key); if (v === undefined) throw new Error('ENOENT'); return v },
+    writeText: async (t, content) => { fsFiles.set(t.key, content); return { version: 1 } },
+  }
+  const agentsList = [
+    { id: 'root', status: 'idle' },
+    { id: 'sub1', status: 'idle' },
+  ]
+  const ctx = {
+    get(name) {
+      if (name === 'subprocess') return { spawn: (opts) => { spawns.push(opts) } }
+      if (name === 'fs') return fsMock
+      if (name === 'sandboxPolicy') return { workspaceRoot: 'C:/ws' }
+      if (name === 'agents') return {
+        list: () => agentsList,
+        roots: () => [{ id: 'root' }],
+        isOwnedBy: (child, owner) => child === 'sub1' && owner !== undefined && owner !== null && owner.id === 'root',
+      }
+      if (name === 'jobs') return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
+      return undefined
+    },
+    on(event, fn) { (listeners[event] ??= []).push(fn) },
+    timeout(fn) { fn(); return () => {} },
+    interval() {},
+  }
+  const harness = { handle: (method, fn) => { handlers[method] = fn } }
+  const plugin = new Function('ctx', 'harness', source)(ctx, harness)
+  plugin.apply(ctx)
+  const emit = (event, ...args) => { for (const fn of listeners[event] ?? []) fn(...args) }
+  const pull = () => handlers.pull({ sessionId: null, after: 0 })
+  return { handlers, spawns, jobDoneFns, emit, pull, fsFiles, fsMock }
+}
+
+function agent(id, origin, reasonKind, hasPending = false) {
+  return {
+    id,
+    session: { header: { origin }, events: [{ type: 'turn/end', data: { reason: { kind: reasonKind } } }] },
+    inbox: { hasPending },
+  }
+}
+
+// 1. 任务完成
+{
+  const env = makeEnv()
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'idle' })
+  ok(env.pull().events.some((e) => e.kind === 'complete' && e.sessionId === 'root'), '主代理完成 → complete')
+}
+
+// 2. 子任务完成（映射回根会话）
+{
+  const env = makeEnv()
+  env.emit('agent/status', { agent: agent('sub1', 'subagent', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('sub1', 'subagent', 'completed'), status: 'idle' })
+  ok(env.pull().events.some((e) => e.kind === 'subcomplete' && e.sessionId === 'root'), '子代理完成 → subcomplete（归属根）')
+}
+
+// 3. 其他打断
+{
+  const env = makeEnv()
+  env.emit('agent/status', { agent: agent('root', 'main', 'aborted'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root', 'main', 'aborted'), status: 'idle' })
+  ok(env.pull().events.some((e) => e.kind === 'interrupt'), 'aborted → interrupt')
+}
+
+// 4. 需要授权
+{
+  const env = makeEnv()
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: { toolName: 'write' } })
+  const ev = env.pull().events.find((e) => e.kind === 'approval')
+  ok(ev !== undefined && ev.tool === 'write', 'approval/asked → approval（含工具名）')
+}
+
+// 5. Agent 提问
+{
+  const env = makeEnv()
+  env.emit('tools/execute', { name: 'ask_user_question', agent: { id: 'root' } }, () => {})
+  ok(env.pull().events.some((e) => e.kind === 'question'), 'ask_user_question → question')
+}
+
+// 6. 计划评审
+{
+  const env = makeEnv()
+  env.emit('tools/execute', { name: 'exit_plan_mode', agent: { id: 'root' } }, () => {})
+  ok(env.pull().events.some((e) => e.kind === 'planreview'), 'exit_plan_mode → planreview')
+}
+
+// 7. 目标受阻
+{
+  const env = makeEnv()
+  env.emit('session/event', { id: 'root' }, { type: 'goal/change', data: { operation: 'block', goal: { phase: 'blocked' } } })
+  ok(env.pull().events.some((e) => e.kind === 'goalblocked'), 'goal/change block → goalblocked')
+}
+
+// 8. 后台任务失败（bash 响；subagent 跳过避免与打断音双响）
+{
+  const env = makeEnv()
+  for (const fn of env.jobDoneFns) fn({ id: 'bash-3', kind: 'bash', status: 'failed', ownerSession: 'root' }, { id: 'root' })
+  ok(env.pull().events.some((e) => e.kind === 'jobfail'), 'bash failed → jobfail')
+  const before = env.pull().events.filter((e) => e.kind === 'jobfail').length
+  for (const fn of env.jobDoneFns) fn({ id: 'subagent-1', kind: 'subagent', status: 'failed', ownerSession: 'root' }, { id: 'root' })
+  ok(env.pull().events.filter((e) => e.kind === 'jobfail').length === before, 'subagent failed 不重复记 jobfail')
+}
+
+// 8b. 后台任务完成（bash 响；subagent 跳过避免与子任务音双响）
+{
+  const env = makeEnv()
+  for (const fn of env.jobDoneFns) fn({ id: 'bash-9', kind: 'bash', status: 'completed', ownerSession: 'root' }, { id: 'root' })
+  ok(env.pull().events.some((e) => e.kind === 'jobdone'), 'bash completed → jobdone')
+  const before = env.pull().events.filter((e) => e.kind === 'jobdone').length
+  for (const fn of env.jobDoneFns) fn({ id: 'subagent-2', kind: 'subagent', status: 'completed', ownerSession: 'root' }, { id: 'root' })
+  ok(env.pull().events.filter((e) => e.kind === 'jobdone').length === before, 'subagent completed 不重复记 jobdone')
+}
+
+// 9. 节流（同种类同来源 3s 内只记一次）
+{
+  const env = makeEnv()
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: { toolName: 'x' } })
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: { toolName: 'y' } })
+  ok(env.pull().events.filter((e) => e.kind === 'approval').length === 1, '3s 节流生效')
+}
+
+// 10. 拉取过滤（after 序号；v0.3.8 固定监听所有会话，sessionId 参数忽略）
+{
+  const env = makeEnv()
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  const all = env.handlers.pull({ sessionId: null, after: 0 })
+  ok(env.handlers.pull({ sessionId: 'root', after: all.seq }).events.length === 0, 'after 序号过滤')
+  ok(env.handlers.pull({ sessionId: 'nope', after: 0 }).events.length === 1, 'v0.3.8 固定监听所有会话（sessionId 参数忽略）')
+}
+
+// 11. sysbeep / setalways（宿主常驻蜂鸣；v0.3.9 走 wscript + 系统 wav，不再 spawn PowerShell）
+{
+  const env = makeEnv()
+  ok(env.handlers.sysbeep({ kind: 'complete' }).ok === true, 'sysbeep 已知种类')
+  ok(env.handlers.sysbeep({ kind: 'nope' }).ok === false, 'sysbeep 未知种类拒绝')
+  env.handlers.setalways({ enabled: true })
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  await new Promise((r) => setTimeout(r, 30))
+  ok(env.spawns.length >= 1, 'alwaysBeep 开启后记录事件触发系统蜂鸣')
+  const sp = env.spawns[0]
+  ok(sp !== undefined && Array.isArray(sp.argv) && sp.argv[0].indexOf('wscript.exe') >= 0, '蜂鸣走 wscript.exe（不再 spawn PowerShell）')
+  const vbs = env.fsFiles.get('t:' + (sp.argv[1] || ''))
+  ok(vbs !== undefined && vbs.indexOf('chimes.wav') >= 0 && vbs.indexOf('WMPlayer.OCX') >= 0, 'vbs 内容为 WMP 播放对应 wav')
+}
+
+// 12. v0.3.11 本地存储（fs）：宿主蜂鸣开关 + 音频库（共享）
+{
+  const env = makeEnv()
+  const g1 = await env.handlers.sysget({})
+  ok(g1.ok === true && g1.hostBeep === null, 'sysget 无记录返回 null')
+  const s1 = await env.handlers.sysset({ hostBeep: true })
+  ok(s1.ok === true, 'sysset 写入本地成功')
+  const g2 = await env.handlers.sysget({})
+  ok(g2.hostBeep === true, 'sysget 读回已存 hostBeep')
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  await new Promise((r) => setTimeout(r, 30))
+  ok(env.spawns.length >= 1, 'hostBeep=true 后记录事件触发系统蜂鸣')
+  const s2 = await env.handlers.sysset({ hostBeep: 'nope' })
+  ok(s2.ok === false, 'sysset 非法值拒绝')
+  const a1 = await env.handlers.saveaudio({ base64: 'QUJD', name: 'my.mp3' })
+  ok(a1.ok === true && typeof a1.id === 'string' && a1.id.length > 0, 'saveaudio 写入音频库并返回 id')
+  const all = await env.handlers.loadall({})
+  ok(all.ok === true && Array.isArray(all.list) && all.list.length === 1 && all.list[0].id === a1.id && all.list[0].name === 'my.mp3', 'loadall 列出音频库')
+  const l1 = await env.handlers.loadaudio({ id: a1.id })
+  ok(l1.ok === true && l1.base64 === 'QUJD' && l1.name === 'my.mp3', 'loadaudio 按 id 读回音频')
+  const l2 = await env.handlers.loadaudio({ id: 'nope' })
+  ok(l2.ok === false, 'loadaudio 无记录返回 false')
+  const a2 = await env.handlers.saveaudio({ name: 'x' })
+  ok(a2.ok === false, 'saveaudio 缺 base64 拒绝')
+}
+
+// 13. v0.3.12：workspace-write 被拒时自动带 danger-full-access 重试；正常路径不传 policy
+{
+  const env = makeEnv()
+  const real = env.fsMock.writeText
+  let calls = 0
+  env.fsMock.writeText = async (t, c, e, s, policy) => {
+    calls++
+    if (calls === 1) throw new Error('FS_SANDBOX_DENIED')
+    return real(t, c, e, s, policy)
+  }
+  const s = await env.handlers.sysset({ hostBeep: true })
+  ok(s.ok === true && calls === 2, '被沙箱拒绝后自动重试成功')
+  let policySeen = 'unset'
+  env.fsMock.writeText = async (t, c, e, s, policy) => { policySeen = policy; return real(t, c, e, s, policy) }
+  await env.handlers.sysset({ hostBeep: false })
+  ok(policySeen === undefined, '正常路径不传 danger-full-access（先走沙箱）')
+}
+
+console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
+process.exitCode = failures === 0 ? 0 : 1

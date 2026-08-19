@@ -1,0 +1,77 @@
+{
+  "name": "dsh-chime-alerts",
+  "version": "0.3.12",
+  "description": "DeepSeek Harness plugin: sound alerts for nine agent events — completion, subagent completion, background-job completion, approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + Windows system beep, per-event toggles/sounds/volume, quick-mute button)",
+  "license": "MIT",
+  "author": {
+    "name": "dsh-chime-alerts contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<your-name>/dsh-chime-alerts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<your-name>/dsh-chime-alerts/issues"
+  },
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "docs",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node tools/test-host.mjs && node tools/test-client.mjs",
+    "check": "node --check lib/index.js && node tools/syntax-check.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "koishi",
+    "plugin",
+    "notification",
+    "sound",
+    "chime",
+    "alerts",
+    "声音提醒",
+    "通知音"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "koishi": {
+    "description": {
+      "zh": "九类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + Windows 系统蜂鸣混合发声，每个事件独立开关、独立声音、独立音量，侧栏工作区快捷静音。",
+      "en": "Sound alerts for nine agent events: completion, subagent completion, background-job completion, approval, question, plan-review, goal-blocked, interruption, and background-job failure. Hybrid playback (browser Web Audio + Windows system beep) with per-event toggles, sounds, and volume, plus workspace quick-mute buttons."
+    },
+    "categories": [
+      "notification"
+    ],
+    "locales": [
+      "zh"
+    ]
+  }
+}
