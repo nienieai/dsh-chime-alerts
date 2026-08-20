@@ -6,7 +6,7 @@
 
 ## 发布前检查
 
-- [ ] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（当前是 `<your-name>` 占位）
+- [x] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（`nienieai/dsh-chime-alerts`）
 - [ ] `LICENSE` 版权行换成作者真名/昵称
 - [ ] npm 包名 `dsh-chime-alerts` 未被占用（`npm view dsh-chime-alerts`；曾用名 `dsh-chime` 已确认被占用）
 - [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 静音按钮）
@@ -36,7 +36,7 @@
 {
   "name": "dsh-chime-alerts",
   "description": "九类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + Windows 系统蜂鸣混合发声，每事件独立开关/声音/音量，工作区快捷静音。",
-  "repo": "https://github.com/<your-name>/dsh-chime-alerts",
+  "repo": "https://github.com/nienieai/dsh-chime-alerts",
   "npm": "dsh-chime-alerts",
   "tags": ["notification", "sound", "audio", "提醒", "声音"],
   "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh install dsh-chime-alerts（路线图）",

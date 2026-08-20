@@ -1,5 +1,10 @@
 # 更新日志
 
+## v0.3.22
+
+- **设置页精简**：去掉页尾的大段说明文字（分组 / 每行元素 / 双开关 / 存储位置等长篇解释），只保留本地存储位置一行，界面更简洁
+- **推送准备**：`package.json` 的 `repository.url` / `bugs.url` 占位符替换为真实仓库地址（`nienieai/dsh-chime-alerts`），新增 `homepage` 字段
+
 ## v0.3.21
 
 - **任务完成的宿主音默认改为系统通知**（`Windows Notify System Generic.wav`，替代钟琴 chimes——完成音用系统通知更贴语义）
