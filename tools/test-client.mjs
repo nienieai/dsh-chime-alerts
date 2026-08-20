@@ -360,6 +360,45 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(titles.length === 3 && titles[0] === '主要通知' && titles[1] === '其他通知' && titles[2] === '需要人介入时', '三分类标题：主要通知/其他通知/需要人介入时')
 }
 
+// 9e. v0.3.20：默认下拉选项显示声音名称（不再写「默认（本事件专属音）」）
+{
+  const env = makeEnv()
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const options = page.filter((n) => n.type === 'option')
+  ok(options.some((o) => o.children !== undefined && String(o.children[0]).indexOf('凯旋') === 0), '默认选项显示声音名称（凯旋）')
+  ok(!options.some((o) => o.children !== undefined && String(o.children[0]).indexOf('默认（本事件专属音）') === 0), '不再显示「默认（本事件专属音）」')
+}
+
+// 9f. v0.3.20：宿主蜂鸣开启时每行追加第二行（宿主音下拉 + 宿主试听），浏览器/宿主试听分离
+{
+  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test' })
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  let page = render(comp())
+  ok(byText(page, '宿主音') !== undefined, '宿主蜂鸣开启时渲染宿主音行')
+  ok(page.filter((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0)).length === 9, '每行一个宿主试听按钮')
+  ok(page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0).length === 9, '每行一个宿主音下拉')
+  const hostPreview = page.find((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0))
+  hostPreview.props.onClick()
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysbeep' && a && a.kind === 'complete'), '宿主试听调用 sysbeep（带事件）')
+  // 浏览器试听只播浏览器音，不调 sysbeep（分离）
+  env.calls.length = 0
+  page = render(comp())
+  const browserPreview = byText(page, '试听')
+  browserPreview.props.onClick()
+  await settle()
+  ok(env.oscs.length > 0, '浏览器试听播放合成音')
+  ok(!env.calls.some(([m]) => m === 'sysbeep'), '浏览器试听不调 sysbeep（分离）')
+  // 宿主音下拉选择 → 调 sysset 保存 hostSounds
+  env.calls.length = 0
+  page = render(comp())
+  const hostSelect = page.find((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0)
+  hostSelect.props.onChange({ target: { value: 'Windows Error.wav' } })
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostSounds && a.hostSounds.complete === 'Windows Error.wav'), '宿主音下拉选择保存到宿主')
+}
+
 // 9e. 多 tab 领导锁：其他 tab 是 leader 时本 tab 只消费不播放（防双响）
 {
   const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])

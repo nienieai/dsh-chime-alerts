@@ -170,10 +170,12 @@ function agent(id, origin, reasonKind, hasPending = false) {
   env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
   await new Promise((r) => setTimeout(r, 30))
   ok(env.spawns.length >= 1, 'alwaysBeep 开启后记录事件触发系统蜂鸣')
-  const sp = env.spawns[0]
-  ok(sp !== undefined && Array.isArray(sp.argv) && sp.argv[0].indexOf('wscript.exe') >= 0, '蜂鸣走 wscript.exe（不再 spawn PowerShell）')
-  const vbs = env.fsFiles.get('t:' + (sp.argv[1] || ''))
-  ok(vbs !== undefined && vbs.indexOf('chimes.wav') >= 0 && vbs.indexOf('WMPlayer.OCX') >= 0, 'vbs 内容为 WMP 播放对应 wav')
+  const found = env.spawns.some((sp) => {
+    if (!sp || !Array.isArray(sp.argv) || !sp.argv[1]) return false
+    const vbs = env.fsFiles.get('t:' + sp.argv[1])
+    return vbs !== undefined && vbs.indexOf('Windows User Account Control.wav') >= 0 && vbs.indexOf('WMPlayer.OCX') >= 0
+  })
+  ok(found, 'vbs 内容为 WMP 播放对应 wav（approval 默认 UAC）')
 }
 
 // 12. v0.3.11 本地存储（fs）：宿主蜂鸣开关 + 音频库（共享）
@@ -251,6 +253,27 @@ function agent(id, origin, reasonKind, hasPending = false) {
   await env.handlers.sysset({ hostBeep: true })
   ok(env.fsFiles.get('t:C:/ws/./dsh-chime-alerts-settings.json') !== undefined, '普通工作区仍用 workspaceRoot')
   ok(env.spawns.every((sp) => !sp.argv || !sp.argv[0] || sp.argv[0].indexOf('cmd.exe') < 0), '普通工作区不 spawn cmd')
+}
+
+// 17. v0.3.20：宿主音每事件可配置（hostSounds 存盘、beep 用自定义 wav）
+{
+  const env = makeEnv()
+  const s = await env.handlers.sysset({ hostSounds: { complete: 'Windows Error.wav' } })
+  ok(s.ok === true, 'sysset 保存自定义宿主音')
+  const g = await env.handlers.sysget({})
+  ok(g.ok === true && g.hostSounds !== undefined && g.hostSounds.complete === 'Windows Error.wav', 'sysget 读回自定义宿主音')
+  await env.handlers.sysset({ hostBeep: true })
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'idle' })
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns[env.spawns.length - 1]
+  ok(sp !== undefined, '自定义宿主音后事件仍触发蜂鸣')
+  const vbs = env.fsFiles.get('t:' + (sp.argv[1] || ''))
+  ok(vbs !== undefined && vbs.indexOf('Windows Error.wav') >= 0, '宿主蜂鸣使用自定义 wav')
+  const b = await env.handlers.sysbeep({ kind: 'nope' })
+  ok(b.ok === false, 'sysbeep 未知种类拒绝')
+  const g2 = await env.handlers.sysget({})
+  ok(g2.hostSounds.subcomplete === undefined, '未配置事件用默认（不回传多余项）')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
