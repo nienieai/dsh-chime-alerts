@@ -91,6 +91,7 @@ docs/REGISTRIES.md   社区市场上架指南
 - 仅覆盖**本 DSH 进程**内宿主能观察到的事件；跨进程/跨机器任务需常驻方案
 - 浏览器音需要页面开着；页面关闭时只有宿主常驻蜂鸣（需开启）
 - 系统蜂鸣按平台：Windows 走 `wscript.exe` + WMP 播放系统 wav（v0.3.9 起，避开安全软件对「node → 隐藏 PowerShell」链路的拦截弹窗）；Linux 需装有 `canberra-gtk-play` 或 `paplay`（多数桌面默认有）且存在 freedesktop 声音主题（`/usr/share/sounds/freedesktop/`，随 sound-theme-freedesktop 安装）；macOS 需 `afplay`（系统自带）——播放器/音效缺失时静默不响
+- **Linux / macOS 分支（v0.4.0）已实现并通过 Node 模拟测试（135 项断言含 14 项跨平台链路），但尚未在真实 Linux/macOS 机器上实测**；Windows 为本机实测平台。如有问题欢迎反馈（仓库 issue）
 - 轮询延迟 ≤~1.5s（700ms 轮询 + 完成/打断 800ms 防抖）
 - 自定义上传音频与系统音模式存本地磁盘（工作区根目录，DSH 从系统目录启动时自动改存 DSH 数据目录 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\` 并迁移旧数据），换浏览器/清缓存不影响；仅更换工作区或删文件才会丢
 - 设置导航的扬声器图标是 CSS hack：外壳 navIcon 按分区 id 写死且无图标注册 API，故隐藏第 5 个导航项默认 svg、在 label::before 用 SVG mask 画扬声器；若将来设置分区排序变化需同步改 `nth-child(5)`
