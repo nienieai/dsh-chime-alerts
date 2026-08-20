@@ -123,8 +123,30 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   env.tick()
   await settle()
   ok(env.oscs.length === 4, 'complete 合成音产生 4 个振荡器（2 音符 × 基音+泛音）')
-  ok(env.oscs[0] && env.oscs[0].frequency.value === 659.25 && env.oscs[0].type === 'triangle', 'complete 频率/音型正确')
+  ok(env.oscs[0] && env.oscs[0].frequency.value === 659.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
   ok(env.oscs[1] && env.oscs[1].frequency.value === 1318.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
+}
+
+// 2b. v0.3.14：九种音全部 sine（风格统一），方向语义正确
+{
+  const env = makeEnv()
+  const freqOf = async (kind) => {
+    const e2 = makeEnv(undefined, undefined, [{ seq: 1, kind, at: Date.now() }])
+    e2.tick()
+    await settle()
+    return e2.oscs.filter((o, i) => i % 2 === 0).map((o) => o.frequency.value)
+  }
+  ok((await freqOf('goalblocked')).every((f) => f > 250 && f < 400), 'goalblocked 低音区（260–392）')
+  const inter = await freqOf('interrupt')
+  ok(inter.length === 2 && inter[0] > inter[1], 'interrupt 快两音下行')
+  const fail = await freqOf('jobfail')
+  ok(fail.length === 3 && fail[0] > fail[1] && fail[1] > fail[2], 'jobfail 快三连下行')
+  const q = await freqOf('question')
+  ok(q.length === 3 && q[0] < q[1] && q[1] < q[2], 'question 三连上行')
+  const p = await freqOf('planreview')
+  ok(p.length === 3 && p[0] > p[1] && p[1] > p[2], 'planreview 三连下行')
+  const a = await freqOf('approval')
+  ok(a.length === 2 && a[0] > a[1], 'approval 门铃高→低')
 }
 
 // 3. 子任务音默认关闭 → 不播放
