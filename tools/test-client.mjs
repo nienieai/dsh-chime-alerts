@@ -18,7 +18,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
   if (legacyLocal !== undefined) storage.set('dsh-chime-v1', JSON.stringify(legacyLocal))
   if (oldLegacyLocal !== undefined) storage.set('dsh-sound-alerts-v1', JSON.stringify(oldLegacyLocal))
   const oscs = []
-  const gainPeaks = []
+  const gainRamps = []
   const audioPlays = []
   const notifications = []
   globalThis.localStorage = {
@@ -37,7 +37,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
       constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
       resume() { return Promise.resolve() }
       createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; oscs.push(o); return o }
-      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime(v) { gainPeaks.push(v) } }, connect() {} } }
+      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime(v, t) { gainRamps.push([v, t]) } }, connect() {} } }
     },
   }
   globalThis.Audio = class {
@@ -87,7 +87,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
     ctx, react, console, styles, host, undefined
   )
   plugin.apply(ctx)
-  return { storage, oscs, gainPeaks, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0]() }
+  return { storage, oscs, gainRamps, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0]() }
 }
 
 /** 递归渲染 createElement 树（组件函数被调用展开），返回所有真实 DOM 型节点。 */
@@ -126,10 +126,19 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.oscs.length === 8, 'complete 合成音产生 8 个振荡器（4 音符 × 基音+泛音）')
   ok(env.oscs[0] && env.oscs[0].frequency.value === 523.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
   ok(env.oscs[1] && env.oscs[1].frequency.value === 1046.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
-  ok(env.gainPeaks.some((v) => Math.abs(v - 0.45) < 1e-9), '音量提升到 0.45')
+  ok(env.gainRamps.some(([v]) => Math.abs(v - 0.45) < 1e-9), '音量提升到 0.45')
 }
 
-// 2b. v0.3.16：九种音各有 1~4 音符、跳跃音型（非连续级进），方向语义正确
+// 2c. v0.3.17：每个音符时值/间隔可以不同（complete 尾音明显更长）
+{
+  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  const decays = env.gainRamps.filter(([v]) => v < 0.001).map(([, t]) => t)
+  ok(decays.length === 4 && decays[3] - decays[2] >= 0.7, 'complete 尾音更长（短短短长节奏）')
+}
+
+// 2b. v0.3.17：九种音各有 1~4 音符、跳跃音型（非连续级进）、节奏各异，语义方向正确
 {
   const env = makeEnv()
   const freqOf = async (kind) => {
@@ -146,17 +155,17 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const jd = await freqOf('jobdone')
   ok(jd.length === 3 && jd[0] < jd[1] && jd[1] < jd[2], 'jobdone 三声跳进上行（392→523→784）')
   const a = await freqOf('approval')
-  ok(a.length === 4 && a[0] > a[1] && a[1] < a[2] && a[2] > a[3], 'approval 叮咚大跳×2')
+  ok(a.length === 2 && a[0] > a[1], 'approval 慢叮咚高→低（880→659）')
   const q = await freqOf('question')
-  ok(q.length === 3 && q[0] < q[1] && q[1] < q[2] && q[1] - q[0] > 100, 'question 三声跳跃上行（含大跳）')
+  ok(q.length === 2 && q[0] < q[1], 'question 上扬双音（523→784）')
   const p = await freqOf('planreview')
-  ok(p.length === 3 && p[0] > p[1] && p[1] > p[2], 'planreview 三声跳跃下行')
+  ok(p.length === 3 && p[0] > p[1] && p[1] > p[2], 'planreview 紧凑下行')
   const g = await freqOf('goalblocked')
-  ok(g.length === 3 && g.every((f) => f >= 250 && f <= 400) && g[0] > g[1] && g[1] > g[2], 'goalblocked 低音三连下行')
+  ok(g.length === 3 && g.every((f) => f >= 250 && f <= 400) && g[0] === g[1] && g[1] > g[2], 'goalblocked 卡住低音（重复+下行）')
   const inter = await freqOf('interrupt')
-  ok(inter.length === 2 && inter[0] > inter[1], 'interrupt 双声下行')
+  ok(inter.length === 2 && inter[0] > inter[1], 'interrupt 突停双音（880→440）')
   const fail = await freqOf('jobfail')
-  ok(fail.length === 3 && fail[0] > fail[1] && fail[1] > fail[2] && fail[0] - fail[1] > 200, 'jobfail 三声大跳坠落下行')
+  ok(fail.length === 3 && fail[0] > fail[1] && fail[1] > fail[2], 'jobfail 坠落三连下行')
 }
 
 // 3. 子任务音默认关闭 → 不播放
