@@ -19,19 +19,19 @@
 
 ## 声音一览
 
-> v0.3.14 起九种合成音统一风格：全部 sine 基音 + sine 2 倍频泛音。音型语法——**上行=完成/积极**（任务完成两音 / 子任务单音 / 后台完成两音），**高→低双音门铃=需要授权**，**三连上行=提问**，**三连下行=评审结束**，**低音慢三连下行=目标受阻**，**快两音下行=打断**，**快三连下行=失败**。
+> v0.3.15 起九种合成音统一风格：全部 sine 基音 + sine 2 倍频泛音、**四音符**、音量 0.45 并保留 0.25s 尾音余韵。音型语法——**上行琶音=完成/积极**（任务完成 / 子任务 / 后台完成），**叮咚×2 门铃=需要授权**，**四连上行=提问**，**四连下行=评审结束**，**低音慢四连下行=目标受阻**，**快四连下行=打断/失败**。
 
 | 事件 | 检测依据（宿主半） | 默认音 |
 |---|---|---|
-| 任务完成 `complete` | `agent/status` 回 idle + 会话日志最后 `turn/end` 原因 = completed（跳过 inbox 待处理） | 上行叮咚 659→988Hz（sine） |
-| 子任务完成 `subcomplete` | 子代理（origin=subagent）回 idle 且 `turn/end` = completed，经 `agents.isOwnedBy` 映射回运行时根（主会话），支持多层嵌套 | 单声叮 880Hz（sine） |
-| 后台任务完成 `jobdone` | `jobs.onJobDone` 且 status=completed（跳过 subagent 作业，避免与子任务音双响） | 上行双音 587→880Hz（sine） |
-| 需要授权 `approval` | 会话日志 `approval/asked`（勿用 `approval/request` 瀑布：会被 UI 应答器先行认领） | 门铃高→低 988→740Hz（sine） |
-| Agent 提问 `question` | `tools/execute` 且 `exec.name === 'ask_user_question'` | 三连上行 523→659→784Hz（sine） |
-| 计划评审 `planreview` | `tools/execute` 且 `exec.name === 'exit_plan_mode'`（计划模式退出前请求批准） | 三连下行 784→659→523Hz（sine） |
-| 目标受阻 `goalblocked` | 会话日志 `goal/change` 且 operation=block（或 goal.phase=blocked） | 低音三连下行 392→349→262Hz（sine） |
-| 其他打断 `interrupt` | `turn/end` 原因 = aborted / error / blocked / max-tokens（主代理与子代理均覆盖） | 快两音下行 523→392Hz（sine） |
-| 后台任务失败 `jobfail` | `jobs.onJobDone` 且 status=failed（跳过 subagent 作业，避免与打断音双响；bash 等非代理作业覆盖） | 快三连下行 494→440→392Hz（sine） |
+| 任务完成 `complete` | `agent/status` 回 idle + 会话日志最后 `turn/end` 原因 = completed（跳过 inbox 待处理） | 上行琶音 523→659→784→1047Hz |
+| 子任务完成 `subcomplete` | 子代理（origin=subagent）回 idle 且 `turn/end` = completed，经 `agents.isOwnedBy` 映射回运行时根（主会话），支持多层嵌套 | 四连上行 659→784→988→1175Hz |
+| 后台任务完成 `jobdone` | `jobs.onJobDone` 且 status=completed（跳过 subagent 作业，避免与子任务音双响） | 上行琶音 587→698→880→1175Hz |
+| 需要授权 `approval` | 会话日志 `approval/asked`（勿用 `approval/request` 瀑布：会被 UI 应答器先行认领） | 叮咚门铃×2 988→740→988→740Hz |
+| Agent 提问 `question` | `tools/execute` 且 `exec.name === 'ask_user_question'` | 四连上行 523→659→784→988Hz |
+| 计划评审 `planreview` | `tools/execute` 且 `exec.name === 'exit_plan_mode'`（计划模式退出前请求批准） | 四连下行 988→784→659→523Hz |
+| 目标受阻 `goalblocked` | 会话日志 `goal/change` 且 operation=block（或 goal.phase=blocked） | 低音四连下行 392→349→311→262Hz |
+| 其他打断 `interrupt` | `turn/end` 原因 = aborted / error / blocked / max-tokens（主代理与子代理均覆盖） | 快四连下行 523→494→440→392Hz |
+| 后台任务失败 `jobfail` | `jobs.onJobDone` 且 status=failed（跳过 subagent 作业，避免与打断音双响；bash 等非代理作业覆盖） | 快四连下行 494→440→392→349Hz |
 
 ## 快速安装（动态插件，功能完整）
 

@@ -18,6 +18,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
   if (legacyLocal !== undefined) storage.set('dsh-chime-v1', JSON.stringify(legacyLocal))
   if (oldLegacyLocal !== undefined) storage.set('dsh-sound-alerts-v1', JSON.stringify(oldLegacyLocal))
   const oscs = []
+  const gainPeaks = []
   const audioPlays = []
   const notifications = []
   globalThis.localStorage = {
@@ -36,7 +37,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
       constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
       resume() { return Promise.resolve() }
       createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; oscs.push(o); return o }
-      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} } }
+      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime(v) { gainPeaks.push(v) } }, connect() {} } }
     },
   }
   globalThis.Audio = class {
@@ -86,7 +87,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
     ctx, react, console, styles, host, undefined
   )
   plugin.apply(ctx)
-  return { storage, oscs, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0]() }
+  return { storage, oscs, gainPeaks, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0]() }
 }
 
 /** 递归渲染 createElement 树（组件函数被调用展开），返回所有真实 DOM 型节点。 */
@@ -117,17 +118,18 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.id === 'chime'), '注册设置分区 chime')
 }
 
-// 2. 完成事件 → 播放合成音（默认音型与频率）
+// 2. 完成事件 → 播放合成音（v0.3.15 四音符，基音 + 泛音）
 {
   const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
   await settle()
-  ok(env.oscs.length === 4, 'complete 合成音产生 4 个振荡器（2 音符 × 基音+泛音）')
-  ok(env.oscs[0] && env.oscs[0].frequency.value === 659.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
-  ok(env.oscs[1] && env.oscs[1].frequency.value === 1318.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
+  ok(env.oscs.length === 8, 'complete 合成音产生 8 个振荡器（4 音符 × 基音+泛音）')
+  ok(env.oscs[0] && env.oscs[0].frequency.value === 523.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
+  ok(env.oscs[1] && env.oscs[1].frequency.value === 1046.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
+  ok(env.gainPeaks.some((v) => Math.abs(v - 0.45) < 1e-9), '音量提升到 0.45')
 }
 
-// 2b. v0.3.14：九种音全部 sine（风格统一），方向语义正确
+// 2b. v0.3.15：九种音全部 sine 四音符（风格统一），方向语义正确
 {
   const env = makeEnv()
   const freqOf = async (kind) => {
@@ -136,17 +138,21 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     await settle()
     return e2.oscs.filter((o, i) => i % 2 === 0).map((o) => o.frequency.value)
   }
-  ok((await freqOf('goalblocked')).every((f) => f > 250 && f < 400), 'goalblocked 低音区（260–392）')
+  const bases = await freqOf('complete')
+  ok(bases.length === 4, 'complete 四音符')
+  ok(bases[0] < bases[1] && bases[1] < bases[2] && bases[2] < bases[3], 'complete 上行琶音')
+  const g = await freqOf('goalblocked')
+  ok(g.length === 4 && g.every((f) => f >= 250 && f <= 400), 'goalblocked 低音四连（250–400）')
   const inter = await freqOf('interrupt')
-  ok(inter.length === 2 && inter[0] > inter[1], 'interrupt 快两音下行')
+  ok(inter.length === 4 && inter[0] > inter[1] && inter[1] > inter[2] && inter[2] > inter[3], 'interrupt 快四连下行')
   const fail = await freqOf('jobfail')
-  ok(fail.length === 3 && fail[0] > fail[1] && fail[1] > fail[2], 'jobfail 快三连下行')
+  ok(fail.length === 4 && fail[0] > fail[1] && fail[1] > fail[2] && fail[2] > fail[3], 'jobfail 快四连下行')
   const q = await freqOf('question')
-  ok(q.length === 3 && q[0] < q[1] && q[1] < q[2], 'question 三连上行')
+  ok(q.length === 4 && q[0] < q[1] && q[1] < q[2] && q[2] < q[3], 'question 四连上行')
   const p = await freqOf('planreview')
-  ok(p.length === 3 && p[0] > p[1] && p[1] > p[2], 'planreview 三连下行')
+  ok(p.length === 4 && p[0] > p[1] && p[1] > p[2] && p[2] > p[3], 'planreview 四连下行')
   const a = await freqOf('approval')
-  ok(a.length === 2 && a[0] > a[1], 'approval 门铃高→低')
+  ok(a.length === 4 && a[0] > a[1] && a[1] < a[2] && a[2] > a[3], 'approval 叮咚门铃×2')
 }
 
 // 3. 子任务音默认关闭 → 不播放
@@ -182,7 +188,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const env = makeEnv({ webBeep: true, hostBeep: true }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, dir: '/tmp/chime' })
   env.tick()
   await settle()
-  ok(env.oscs.length === 4, 'webBeep=true 播放浏览器音')
+  ok(env.oscs.length === 8, 'webBeep=true 播放浏览器音')
   ok(!env.calls.some(([m]) => m === 'sysbeep'), 'hostBeep=true 时客户端不重复调 sysbeep（宿主 record() 已响）')
 }
 
@@ -237,7 +243,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     [{ workspaceId: 'K230', title: 'K230', sessionIds: ['s1'] }])
   env.tick()
   await settle()
-  ok(env.oscs.length === 4, '未静音工作区事件正常播放')
+  ok(env.oscs.length === 8, '未静音工作区事件正常播放')
 }
 
 // 8c. 工作区映射不到的会话照常响（防御）
@@ -247,7 +253,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     [{ workspaceId: 'K230', title: 'K230', sessionIds: ['s1'] }])
   env.tick()
   await settle()
-  ok(env.oscs.length === 4, '未知会话不被误静音')
+  ok(env.oscs.length === 8, '未知会话不被误静音')
 }
 
 // 8d. muted 旧格式（工作区标题）自动迁移为 workspaceId
@@ -269,7 +275,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(testBtn !== undefined, '试听按钮存在')
   testBtn.props.onClick()
   await settle()
-  ok(env.oscs.length === 4, '试听触发合成音')
+  ok(env.oscs.length === 8, '试听触发合成音')
 }
 
 // 9b. 声音下拉内置「自定义声音…」，选择预设生效，外置上传/清除按钮已移除
