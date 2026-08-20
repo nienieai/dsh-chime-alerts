@@ -10,17 +10,18 @@ const ok = (cond, label) => {
   else { failures++; console.log('FAIL', label) }
 }
 
-function makeEnv() {
+function makeEnv(opts = {}) {
   const listeners = {}
   const handlers = {}
   const spawns = []
   const jobDoneFns = []
   const fsFiles = new Map()
   const fsMock = {
-    resolve: async (path, opts) => ({ key: 't:' + (opts && opts.cwd ? opts.cwd + '/' : '') + path }),
+    resolve: async (path, opts2) => ({ key: 't:' + (opts2 && opts2.cwd ? opts2.cwd + '/' : '') + path }),
     processPath: (t) => t.key.slice(2),
     readText: async (t) => { const v = fsFiles.get(t.key); if (v === undefined) throw new Error('ENOENT'); return v },
     writeText: async (t, content) => { fsFiles.set(t.key, content); return { version: 1 } },
+    listDir: async () => [],
   }
   const agentsList = [
     { id: 'root', status: 'idle' },
@@ -28,9 +29,20 @@ function makeEnv() {
   ]
   const ctx = {
     get(name) {
-      if (name === 'subprocess') return { spawn: (opts) => { spawns.push(opts) } }
+      if (name === 'subprocess') return {
+        spawn: (spOpts) => {
+          spawns.push(spOpts)
+          if (spOpts.argv && spOpts.argv[0] && spOpts.argv[0].indexOf('cmd.exe') >= 0) {
+            return {
+              done: Promise.resolve({ exitCode: 0 }),
+              collected: { stdout: { finalize: () => ({ text: opts.userProfileText ?? 'C:\\Users\\ns' }) } },
+            }
+          }
+          return { done: Promise.resolve({ exitCode: 0 }), collected: {} }
+        },
+      }
       if (name === 'fs') return fsMock
-      if (name === 'sandboxPolicy') return { workspaceRoot: 'C:/ws' }
+      if (name === 'sandboxPolicy') return { workspaceRoot: opts.workspaceRoot ?? 'C:/ws' }
       if (name === 'agents') return {
         list: () => agentsList,
         roots: () => [{ id: 'root' }],
@@ -206,6 +218,39 @@ function agent(id, origin, reasonKind, hasPending = false) {
   env.fsMock.writeText = async (t, c, e, s, policy) => { policySeen = policy; return real(t, c, e, s, policy) }
   await env.handlers.sysset({ hostBeep: false })
   ok(policySeen === undefined, '正常路径不传 danger-full-access（先走沙箱）')
+}
+
+// 14. v0.3.13：workspaceRoot 落在系统目录时，存储根跟随 DSH 数据目录（%USERPROFILE%\.dsh\plugins\dsh-chime-alerts）
+{
+  const env = makeEnv({ workspaceRoot: 'C:\\Windows\\System32' })
+  const s = await env.handlers.sysset({ hostBeep: true })
+  ok(s.ok === true, '系统目录下 sysset 仍成功')
+  const key = 't:C:\\Users\\ns\\.dsh\\plugins\\dsh-chime-alerts/./dsh-chime-alerts-settings.json'
+  ok(env.fsFiles.get(key) !== undefined, '存储根 = %USERPROFILE%\\.dsh\\plugins\\dsh-chime-alerts')
+  const cmdSpawn = env.spawns.find((sp) => sp.argv && sp.argv[0] && sp.argv[0].indexOf('cmd.exe') >= 0)
+  ok(cmdSpawn !== undefined && cmdSpawn.argv[3] === 'echo %USERPROFILE%', '解析用户目录走 cmd /c echo %USERPROFILE%')
+  const g = await env.handlers.sysget({})
+  ok(g.ok === true && g.hostBeep === true && typeof g.dir === 'string' && g.dir.indexOf('.dsh') >= 0, 'sysget 返回 DSH 目录路径')
+}
+
+// 15. v0.3.13：系统目录里的旧设置/音频迁移到新位置
+{
+  const env = makeEnv({ workspaceRoot: 'C:\\Windows\\System32' })
+  const legacyKey = 't:C:\\Windows\\System32/./dsh-chime-alerts-settings.json'
+  env.fsFiles.set(legacyKey, JSON.stringify({ hostBeep: true }))
+  env.fsMock.listDir = async () => [{ name: 'dsh-chime-alerts-settings.json' }]
+  const g = await env.handlers.sysget({})
+  ok(g.hostBeep === true, '旧设置在系统目录时迁移后仍生效')
+  const migrated = env.fsFiles.get('t:C:\\Users\\ns\\.dsh\\plugins\\dsh-chime-alerts/./dsh-chime-alerts-settings.json')
+  ok(migrated !== undefined && migrated.indexOf('hostBeep') >= 0, '旧设置文件复制到新位置')
+}
+
+// 16. v0.3.13：workspaceRoot 为普通工作区时不查用户目录（保持原路径）
+{
+  const env = makeEnv({ workspaceRoot: 'C:/ws' })
+  await env.handlers.sysset({ hostBeep: true })
+  ok(env.fsFiles.get('t:C:/ws/./dsh-chime-alerts-settings.json') !== undefined, '普通工作区仍用 workspaceRoot')
+  ok(env.spawns.every((sp) => !sp.argv || !sp.argv[0] || sp.argv[0].indexOf('cmd.exe') < 0), '普通工作区不 spawn cmd')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

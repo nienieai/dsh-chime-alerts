@@ -12,10 +12,10 @@
 - **并行/后台任务逐个响**：3 个并行子代理分别完成 = 3 声（节流按种类+来源独立，互不吞）
 - **宿主常驻蜂鸣**：系统级声音选「常驻」后，页面最小化甚至关闭时宿主直接系统蜂鸣，任务照样响
 - **声音可替换**：每事件可换其他内置音，或上传自定义音频（≤5MB）
-- **设置本地化**：系统音模式与自定义音频存**本地磁盘（工作区根目录）**（v0.3.10 起以 `sandboxPolicy.workspaceRoot` 为存储基准，兼容 DSH 沙箱的 workspace-write 策略）；其余设置（总开关/事件开关/音量/工作区静音）存浏览器 localStorage（键 `dsh-chime-alerts-v1`，旧键自动迁移）
+- **设置本地化**：系统音模式与自定义音频存**本地磁盘**（v0.3.10 起以 `sandboxPolicy.workspaceRoot` 为存储基准，兼容 DSH 沙箱的 workspace-write 策略；v0.3.13 起若该基准落在系统目录——如 DSH 以管理员身份从 System32 启动——自动改用 **DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`，旧数据自动迁移）；其余设置（总开关/事件开关/音量/工作区静音）存浏览器 localStorage（键 `dsh-chime-alerts-v1`，旧键自动迁移）
 - **默认值即开箱即用**：总开关开、固定监听所有会话（范围控制交给工作区静音按钮）、满音量；子任务音默认关
 - **中英双语界面**：设置页与通知按浏览器语言自动切换（中文环境不变，英文环境显示英文）
-- **Node 可跑的自动化测试**：`npm test`（85 项断言，无需浏览器/DSH）
+- **Node 可跑的自动化测试**：`npm test`（92 项断言，无需浏览器/DSH）
 
 ## 声音一览
 
@@ -88,7 +88,7 @@ docs/REGISTRIES.md   社区市场上架指南
 - 浏览器音需要页面开着；页面关闭时只有宿主常驻蜂鸣（需开启）
 - 系统蜂鸣走 `wscript.exe` + WMP 播放 Windows 自带音效（v0.3.9 起，避开安全软件对「node → 隐藏 PowerShell」链路的拦截弹窗；九类事件映射不同系统 wav）；若 `wscript.exe`/Media 音效缺失则静默不响
 - 轮询延迟 ≤~1.5s（700ms 轮询 + 完成/打断 800ms 防抖）
-- 自定义上传音频与系统音模式存本地磁盘（工作区根目录），换浏览器/清缓存不影响；仅更换工作区或删文件才会丢
+- 自定义上传音频与系统音模式存本地磁盘（工作区根目录，DSH 从系统目录启动时自动改存 DSH 数据目录 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\` 并迁移旧数据），换浏览器/清缓存不影响；仅更换工作区或删文件才会丢
 - 设置导航的扬声器图标是 CSS hack：外壳 navIcon 按分区 id 写死且无图标注册 API，故隐藏第 5 个导航项默认 svg、在 label::before 用 SVG mask 画扬声器；若将来设置分区排序变化需同步改 `nth-child(5)`
 - 工作区行内静音按钮是 DOM 注入（外壳没有工作区行的插槽）：锚定 `div[role="treeitem"][aria-expanded]`（会话行无 aria-expanded），按钮挂在 `document.body`（React 树外，免疫重渲染抹除）、fixed 定位贴在工作区行右侧、悬停显示；悬停按钮时用 `snd-keep-open` 类 + 外壳哈希类名 `YDXeBa_*` 保持官方 ⋮/+ 按钮可见；外壳若改行结构/属性/类名需同步适配
 
@@ -97,7 +97,7 @@ docs/REGISTRIES.md   社区市场上架指南
 本插件由 **AI Agent 工具辅助开发**：功能设计、代码实现、多 Agent 代码审计、自动化测试与文档整理均由 Agent 工具协作完成（详见 [CHANGELOG.md](CHANGELOG.md)）。
 
 ```sh
-npm test      # 宿主 30 + 客户端 55 项断言（Node 即可，无需浏览器/DSH）
+npm test      # 宿主 37 + 客户端 55 项断言（Node 即可，无需浏览器/DSH）
 npm run check # 语法检查（lib/index.js + 双半函数体）
 ```
 

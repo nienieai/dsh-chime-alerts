@@ -1,5 +1,11 @@
 # 更新日志
 
+## v0.3.13
+
+- **存储位置跟随 DSH 目录**：DSH 以管理员身份启动时进程 cwd=System32，导致沙箱 `workspaceRoot` 落在系统目录、插件数据写进 `C:\Windows\System32`。现检测到系统目录时自动改用 **DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`（经 `cmd /c echo %USERPROFILE%` 解析用户主目录，失败则回退原路径）；普通工作区场景行为不变
+- **旧数据自动迁移**：`workspaceRoot` 系统目录里已写入的 `dsh-chime-alerts-settings.json` / 音频清单 / 音频文件在首次启动时自动复制到新位置（旧文件保留，可手动删除）
+- 测试 +5（系统目录→DSH 目录 / cmd 解析 / sysget 路径 / 旧数据迁移 / 普通工作区不变），宿主 37 项、客户端 55 项、合计 92 项
+
 ## v0.3.12
 
 - **存储落盘加固**：写入被 workspace-write 沙箱拒绝（`FS_SANDBOX_DENIED`）时，自动以插件自身数据文件身份带 `danger-full-access` 策略重试一次（正常路径仍先走沙箱）——解决 `workspaceRoot` 回退到 DSH 进程目录导致设置/音频/蜂鸣脚本写不进磁盘的问题
