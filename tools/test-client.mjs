@@ -126,7 +126,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.oscs.length === 8, 'complete 合成音产生 8 个振荡器（4 音符 × 基音+泛音）')
   ok(env.oscs[0] && env.oscs[0].frequency.value === 523.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
   ok(env.oscs[1] && env.oscs[1].frequency.value === 1046.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
-  ok(env.gainRamps.some(([v]) => Math.abs(v - 0.55) < 1e-9), '整体音量提升到 0.55')
+  ok(env.gainRamps.some(([v]) => Math.abs(v - 0.45) < 1e-9), '整体音量 0.45（降杂音）')
 }
 
 // 2c. v0.3.17/18：每个音符时值/间隔可以不同（complete 尾音明显更长）
@@ -138,7 +138,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(decays.length === 4 && decays[3] - decays[2] >= 0.7, 'complete 尾音更长（短短短长节奏）')
 }
 
-// 2d. v0.3.18：音量变化（complete 渐强）、音色变化（第三音 triangle）、后台任务低调
+// 2d. v0.3.18/19：音量变化（complete 渐强）、音色变化（第三音 triangle）、后台/子任务低调
 {
   const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
@@ -156,6 +156,11 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   await settle()
   const fp = jf.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
   ok(fp.length === 3 && fp.every((p) => p < 0.5), 'jobfail 后台低调（<0.5）')
+  const sub = makeEnv({ kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } }, undefined, [{ seq: 1, kind: 'subcomplete', at: Date.now() }])
+  sub.tick()
+  await settle()
+  const sp = sub.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
+  ok(sp.length === 1 && sp[0] < 0.3, 'subcomplete 子任务低调（<0.3）')
 }
 
 // 2b. v0.3.17：九种音各有 1~4 音符、跳跃音型（非连续级进）、节奏各异，语义方向正确
