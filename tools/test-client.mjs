@@ -126,16 +126,36 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.oscs.length === 8, 'complete 合成音产生 8 个振荡器（4 音符 × 基音+泛音）')
   ok(env.oscs[0] && env.oscs[0].frequency.value === 523.25 && env.oscs[0].type === 'sine', 'complete 频率/音型正确')
   ok(env.oscs[1] && env.oscs[1].frequency.value === 1046.5 && env.oscs[1].type === 'sine', '泛音为 2 倍频正弦')
-  ok(env.gainRamps.some(([v]) => Math.abs(v - 0.45) < 1e-9), '音量提升到 0.45')
+  ok(env.gainRamps.some(([v]) => Math.abs(v - 0.55) < 1e-9), '整体音量提升到 0.55')
 }
 
-// 2c. v0.3.17：每个音符时值/间隔可以不同（complete 尾音明显更长）
+// 2c. v0.3.17/18：每个音符时值/间隔可以不同（complete 尾音明显更长）
 {
   const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
   await settle()
   const decays = env.gainRamps.filter(([v]) => v < 0.001).map(([, t]) => t)
   ok(decays.length === 4 && decays[3] - decays[2] >= 0.7, 'complete 尾音更长（短短短长节奏）')
+}
+
+// 2d. v0.3.18：音量变化（complete 渐强）、音色变化（第三音 triangle）、后台任务低调
+{
+  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  const peaks = env.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
+  ok(peaks.length === 4 && peaks[0] < peaks[1] && peaks[1] < peaks[2] && peaks[2] < peaks[3], 'complete 渐强（每音音量不同）')
+  ok(env.oscs[4] && env.oscs[4].type === 'triangle', '音色变化（第三音 triangle）')
+  const jd = makeEnv(undefined, undefined, [{ seq: 1, kind: 'jobdone', at: Date.now() }])
+  jd.tick()
+  await settle()
+  const jp = jd.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
+  ok(jp.length === 3 && jp.every((p) => p < 0.5) && jp[0] > jp[1] && jp[1] > jp[2], 'jobdone 后台低调且渐弱（<0.5）')
+  const jf = makeEnv(undefined, undefined, [{ seq: 1, kind: 'jobfail', at: Date.now() }])
+  jf.tick()
+  await settle()
+  const fp = jf.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
+  ok(fp.length === 3 && fp.every((p) => p < 0.5), 'jobfail 后台低调（<0.5）')
 }
 
 // 2b. v0.3.17：九种音各有 1~4 音符、跳跃音型（非连续级进）、节奏各异，语义方向正确
