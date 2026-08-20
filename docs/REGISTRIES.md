@@ -40,7 +40,7 @@
   "npm": "dsh-chime-alerts",
   "tags": ["notification", "sound", "audio", "提醒", "声音"],
   "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh install dsh-chime-alerts（路线图）",
-  "platforms": ["windows"],
+  "platforms": ["windows", "linux", "macos"],
   "license": "MIT"
 }
 ```

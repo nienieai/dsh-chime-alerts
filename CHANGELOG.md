@@ -1,5 +1,13 @@
 # 更新日志
 
+## v0.4.0
+
+- **跨平台宿主蜂鸣**：系统音按平台分发——Windows 保持 `wscript`+WMP 播系统 wav；**Linux** 探测 `canberra-gtk-play`（无则回退 `paplay`）播 freedesktop 主题音（`/usr/share/sounds/freedesktop/stereo/*.oga`）；**macOS** 用 `afplay` 播 `/System/Library/Sounds` 系统音
+- **宿主音选项按平台**：设置页第二行下拉——Windows 19 种系统 wav / Linux 8 种 freedesktop 主题音 / macOS 11 种系统音;每平台各有语义对应的九事件默认映射(如 Linux 门铃→dialog-warning、坠落→dialog-error)
+- **存储 fallback 平台化**：workspaceRoot 落在系统目录时,Windows 用 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts`(原逻辑),Linux/macOS 用 `$HOME/.dsh/plugins/dsh-chime-alerts`(经 `sh -c 'printf %s "$HOME"'` 解析)
+- `sysget` 返回 `platform` 字段,客户端据此渲染宿主音列表
+- 测试 +14(host +9:linux canberra/paplay 回退/自定义音/存储 fallback/darwin afplay;client +5:linux 选项渲染与保存),宿主 51 项、客户端 84 项、合计 135 项
+
 ## v0.3.22
 
 - **设置页精简**：去掉页尾的大段说明文字（分组 / 每行元素 / 双开关 / 存储位置等长篇解释），只保留本地存储位置一行，界面更简洁

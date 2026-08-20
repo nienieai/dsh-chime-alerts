@@ -32,10 +32,21 @@ function makeEnv(opts = {}) {
       if (name === 'subprocess') return {
         spawn: (spOpts) => {
           spawns.push(spOpts)
-          if (spOpts.argv && spOpts.argv[0] && spOpts.argv[0].indexOf('cmd.exe') >= 0) {
+          const argv0 = spOpts.argv && spOpts.argv[0]
+          if (spOpts.argv && argv0 && argv0.indexOf('cmd.exe') >= 0) {
             return {
               done: Promise.resolve({ exitCode: 0 }),
               collected: { stdout: { finalize: () => ({ text: opts.userProfileText ?? 'C:\\Users\\ns' }) } },
+            }
+          }
+          if (argv0 === 'sh') {
+            const c = spOpts.argv[2] || ''
+            if (c.indexOf('command -v') >= 0) {
+              const probeOk = c.indexOf('canberra-gtk-play') >= 0 ? (opts.canberraProbe !== false) : true
+              return { done: Promise.resolve({ exitCode: probeOk ? 0 : 1 }), collected: {} }
+            }
+            if (c.indexOf('printf') >= 0) {
+              return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { finalize: () => ({ text: opts.homeText ?? '/home/user' }) } } }
             }
           }
           return { done: Promise.resolve({ exitCode: 0 }), collected: {} }
@@ -55,7 +66,7 @@ function makeEnv(opts = {}) {
     timeout(fn) { fn(); return () => {} },
     interval() {},
   }
-  const harness = { handle: (method, fn) => { handlers[method] = fn } }
+  const harness = Object.assign({ handle: (method, fn) => { handlers[method] = fn } }, opts.harnessExtra || {})
   const plugin = new Function('ctx', 'harness', source)(ctx, harness)
   plugin.apply(ctx)
   const emit = (event, ...args) => { for (const fn of listeners[event] ?? []) fn(...args) }
@@ -274,6 +285,57 @@ function agent(id, origin, reasonKind, hasPending = false) {
   ok(b.ok === false, 'sysbeep 未知种类拒绝')
   const g2 = await env.handlers.sysget({})
   ok(g2.hostSounds.subcomplete === undefined, '未配置事件用默认（不回传多余项）')
+}
+
+// 18. v0.4.0：Linux 宿主蜂鸣（freedesktop 主题音，canberra-gtk-play 优先，paplay 回退）
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' } })
+  const g = await env.handlers.sysget({})
+  ok(g.platform === 'linux', 'sysget 返回平台 linux')
+  ok(env.handlers.sysbeep({ kind: 'complete' }).ok === true, 'linux sysbeep 已知种类')
+  ok(env.handlers.sysbeep({ kind: 'nope' }).ok === false, 'linux sysbeep 未知种类拒绝')
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns[env.spawns.length - 1]
+  ok(sp !== undefined && sp.argv[0] === 'canberra-gtk-play' && sp.argv[1] === '--id=complete', 'linux 默认音走 canberra-gtk-play --id=complete')
+}
+
+// 18b. linux 无 canberra 时回退 paplay 播 freedesktop oga
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' }, canberraProbe: false })
+  env.handlers.sysbeep({ kind: 'jobfail' })
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns[env.spawns.length - 1]
+  ok(sp !== undefined && sp.argv[0] === 'paplay' && sp.argv[1] === '/usr/share/sounds/freedesktop/stereo/dialog-error.oga', 'linux 无 canberra 回退 paplay 播主题音')
+}
+
+// 18c. linux 事件触发 + 自定义宿主音
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' } })
+  await env.handlers.sysset({ hostSounds: { complete: 'bell' } })
+  await env.handlers.sysset({ hostBeep: true })
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns[env.spawns.length - 1]
+  ok(sp !== undefined && sp.argv[0] === 'canberra-gtk-play' && sp.argv[1] === '--id=dialog-warning', 'linux 事件触发用默认 dialog-warning')
+}
+
+// 18d. linux 存储 fallback：workspaceRoot 在系统目录 → $HOME/.dsh/plugins/dsh-chime-alerts
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' }, workspaceRoot: '/usr/share/x' })
+  const s = await env.handlers.sysset({ hostBeep: true })
+  ok(s.ok === true, 'linux 系统目录下 sysset 仍成功')
+  ok(env.fsFiles.get('t:/home/user/.dsh/plugins/dsh-chime-alerts/./dsh-chime-alerts-settings.json') !== undefined, 'linux 存储根 = $HOME/.dsh/plugins/dsh-chime-alerts')
+  const shHome = env.spawns.find((sp2) => sp2.argv && sp2.argv[0] === 'sh' && (sp2.argv[2] || '').indexOf('printf') >= 0)
+  ok(shHome !== undefined, 'linux 解析用户目录走 sh printf $HOME')
+}
+
+// 18e. darwin 宿主蜂鸣（afplay 系统音）
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'darwin' } })
+  env.handlers.sysbeep({ kind: 'complete' })
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns[env.spawns.length - 1]
+  ok(sp !== undefined && sp.argv[0] === 'afplay' && sp.argv[1] === '/System/Library/Sounds/Glass.aiff', 'darwin 走 afplay 系统音')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

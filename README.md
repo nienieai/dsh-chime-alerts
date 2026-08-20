@@ -7,19 +7,19 @@
 ## 特性
 
 - **九类事件**独立开关 / 独立声音 / 独立音量：任务完成、子任务完成、后台任务完成、需要授权、Agent 提问、计划评审、目标受阻、其他打断、后台任务失败
-- **混合发声（双独立开关）**：**网页响铃**（浏览器 Web Audio 合成音，存浏览器）与**宿主蜂鸣**（系统音效，页面关闭也响，存本地磁盘）各自独立开关；另有桌面通知独立开关
+- **混合发声（双独立开关）**：**网页响铃**（浏览器 Web Audio 合成音，存浏览器，跨平台）与**宿主蜂鸣**（系统音效，页面关闭也响，存本地磁盘）各自独立开关；另有桌面通知独立开关
 - **工作区静音按钮**：侧栏每个工作区条目（如 K230）旁的喇叭按钮，按工作区独立静音/恢复；已静音的工作区**常驻显示橙色斜杠标志**，状态即点即存
 - **并行/后台任务逐个响**：3 个并行子代理分别完成 = 3 声（节流按种类+来源独立，互不吞）
-- **宿主常驻蜂鸣**：系统级声音选「常驻」后，页面最小化甚至关闭时宿主直接系统蜂鸣，任务照样响
+- **宿主常驻蜂鸣（跨平台，v0.4.0）**：Windows 播系统 wav（`wscript`+WMP，可逐事件换 19 种）；Linux 播 freedesktop 主题音（`canberra-gtk-play`，无则回退 `paplay`）；macOS 用 `afplay` 播系统音——页面最小化甚至关闭时宿主照样响
 - **声音可替换**：每事件可换其他内置音，或上传自定义音频（≤5MB）
-- **设置本地化**：系统音模式与自定义音频存**本地磁盘**（v0.3.10 起以 `sandboxPolicy.workspaceRoot` 为存储基准，兼容 DSH 沙箱的 workspace-write 策略；v0.3.13 起若该基准落在系统目录——如 DSH 以管理员身份从 System32 启动——自动改用 **DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`，旧数据自动迁移）；其余设置（总开关/事件开关/音量/工作区静音）存浏览器 localStorage（键 `dsh-chime-alerts-v1`，旧键自动迁移）
+- **设置本地化**：系统音模式与自定义音频存**本地磁盘**（v0.3.10 起以 `sandboxPolicy.workspaceRoot` 为存储基准，兼容 DSH 沙箱的 workspace-write 策略；v0.3.13 起若该基准落在系统目录——如 DSH 以管理员身份从 System32 启动——自动改用 **DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`，Linux/macOS 对应 `$HOME/.dsh/plugins/dsh-chime-alerts`（v0.4.0），旧数据自动迁移）；其余设置（总开关/事件开关/音量/工作区静音）存浏览器 localStorage（键 `dsh-chime-alerts-v1`，旧键自动迁移）
 - **默认值即开箱即用**：总开关开、固定监听所有会话（范围控制交给工作区静音按钮）、满音量；子任务音默认关
 - **中英双语界面**：设置页与通知按浏览器语言自动切换（中文环境不变，英文环境显示英文）
-- **Node 可跑的自动化测试**：`npm test`（92 项断言，无需浏览器/DSH）
+- **Node 可跑的自动化测试**：`npm test`（135 项断言，无需浏览器/DSH）
 
 ## 声音一览
 
-> v0.3.19 起九种合成音各有名字、1~4 声、连续/跳跃音阶、相同/不同间隔与时值、渐强渐弱、音色变化(sine/triangle)、尾音长短;**后台任务与子任务低调**;整体音量 0.45 + 2 倍频 sine 泛音 0.22(消除杂音)。v0.3.20 起声音下拉「默认」显示实际声音名;宿主蜂鸣开启时每行追加第二行(宿主音下拉 19 种系统 wav 可选 + 宿主试听,与浏览器试听分离)。
+> v0.3.19 起九种合成音各有名字、1~4 声、连续/跳跃音阶、相同/不同间隔与时值、渐强渐弱、音色变化(sine/triangle)、尾音长短;**后台任务与子任务低调**;整体音量 0.45 + 2 倍频 sine 泛音 0.22(消除杂音)。v0.3.20 起声音下拉「默认」显示实际声音名;宿主蜂鸣开启时每行追加第二行(宿主音下拉 + 宿主试听,与浏览器试听分离)。**v0.4.0 起宿主音选项按平台**:Windows 19 种系统 wav / Linux 8 种 freedesktop 主题音 / macOS 11 种系统音。
 
 | 事件 | 名字 | 检测依据（宿主半） | 默认音 |
 |---|---|---|---|
@@ -33,7 +33,7 @@
 | 其他打断 `interrupt` | **惊停** | `turn/end` 原因 = aborted / error / blocked / max-tokens（主代理与子代理均覆盖） | 2 声突停 880→440Hz（长音后戛然而止） |
 | 后台任务失败 `jobfail` | **坠落** | `jobs.onJobDone` 且 status=failed（跳过 subagent 作业，避免与打断音双响；bash 等非代理作业覆盖） | 3 声坠落·渐弱·低调 1047→698→494Hz |
 
-宿主音默认映射(v0.3.20 起可逐事件更换)：凯旋→chimes / 轻叩→ding / 涟漪→系统通知 / 门铃→UAC 授权 / 询问→Windows Ding / 落定→Windows 默认 / 困顿→惊叹 / 惊停→邮件通知 / 坠落→错误。
+宿主音默认映射(v0.3.20 起可逐事件更换,按平台取默认)：Windows——凯旋→系统通知 / 轻叩→ding / 涟漪→系统通知 / 门铃→UAC 授权 / 询问→Windows Ding / 落定→Windows 默认 / 困顿→惊叹 / 惊停→邮件通知 / 坠落→错误;Linux——complete / message / dialog-warning / dialog-question / dialog-information / dialog-error 等 freedesktop 主题音;macOS——Glass / Pop / Ping / Tink / Sosumi / Basso / Blow 等系统音。
 
 ## 快速安装（动态插件，功能完整）
 
@@ -72,7 +72,7 @@ docs/REGISTRIES.md   社区市场上架指南
 - 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权、目标受阻）、`tools/execute`（提问、计划评审）、`jobs.onJobDone`（后台任务完成/失败），节流 3s（种类+来源）后入事件缓冲
 - 客户端每 700ms `host.call('pull', …)` 拉取并播放；15 秒以上旧事件跳过；boot 令牌防插件版本串扰
 - 防误报：800ms 防抖（完成/打断类）、主代理 `inbox.hasPending` 跳过
-- 浏览器音用 Web Audio 振荡器合成，零音频资源文件；系统蜂鸣由宿主写临时 `.vbs` 经 `wscript.exe` + WMP 播放 Windows 自带 wav（v0.3.9 起，避开 PowerShell；九类事件音色映射见 CHANGELOG）
+- 浏览器音用 Web Audio 振荡器合成，零音频资源文件；系统蜂鸣按平台：Windows 由宿主写临时 `.vbs` 经 `wscript.exe` + WMP 播放系统 wav（v0.3.9 起，避开 PowerShell；九类事件映射见 CHANGELOG）；Linux 探测 `canberra-gtk-play` → 回退 `paplay` 播 freedesktop 主题音（v0.4.0）；macOS 用 `afplay` 播系统音（v0.4.0）
 
 ## 静态化路线图（npm 安装）
 
@@ -90,7 +90,7 @@ docs/REGISTRIES.md   社区市场上架指南
 
 - 仅覆盖**本 DSH 进程**内宿主能观察到的事件；跨进程/跨机器任务需常驻方案
 - 浏览器音需要页面开着；页面关闭时只有宿主常驻蜂鸣（需开启）
-- 系统蜂鸣走 `wscript.exe` + WMP 播放 Windows 自带音效（v0.3.9 起，避开安全软件对「node → 隐藏 PowerShell」链路的拦截弹窗；九类事件映射不同系统 wav）；若 `wscript.exe`/Media 音效缺失则静默不响
+- 系统蜂鸣按平台：Windows 走 `wscript.exe` + WMP 播放系统 wav（v0.3.9 起，避开安全软件对「node → 隐藏 PowerShell」链路的拦截弹窗）；Linux 需装有 `canberra-gtk-play` 或 `paplay`（多数桌面默认有）且存在 freedesktop 声音主题（`/usr/share/sounds/freedesktop/`，随 sound-theme-freedesktop 安装）；macOS 需 `afplay`（系统自带）——播放器/音效缺失时静默不响
 - 轮询延迟 ≤~1.5s（700ms 轮询 + 完成/打断 800ms 防抖）
 - 自定义上传音频与系统音模式存本地磁盘（工作区根目录，DSH 从系统目录启动时自动改存 DSH 数据目录 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\` 并迁移旧数据），换浏览器/清缓存不影响；仅更换工作区或删文件才会丢
 - 设置导航的扬声器图标是 CSS hack：外壳 navIcon 按分区 id 写死且无图标注册 API，故隐藏第 5 个导航项默认 svg、在 label::before 用 SVG mask 画扬声器；若将来设置分区排序变化需同步改 `nth-child(5)`
@@ -101,7 +101,7 @@ docs/REGISTRIES.md   社区市场上架指南
 本插件由 **AI Agent 工具辅助开发**：功能设计、代码实现、多 Agent 代码审计、自动化测试与文档整理均由 Agent 工具协作完成（详见 [CHANGELOG.md](CHANGELOG.md)）。
 
 ```sh
-npm test      # 宿主 37 + 客户端 55 项断言（Node 即可，无需浏览器/DSH）
+npm test      # 宿主 51 + 客户端 84 项断言（Node 即可，无需浏览器/DSH）
 npm run check # 语法检查（lib/index.js + 双半函数体）
 ```
 

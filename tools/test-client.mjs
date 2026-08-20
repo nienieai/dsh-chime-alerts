@@ -399,6 +399,23 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostSounds && a.hostSounds.complete === 'Windows Error.wav'), '宿主音下拉选择保存到宿主')
 }
 
+// 9g. v0.4.0：Linux 平台宿主音选项（freedesktop 主题音，不含 Windows wav）
+{
+  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'linux' })
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  const page = render(comp())
+  const hostSelects = page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0)
+  ok(hostSelects.length === 9, 'linux 每行一个宿主音下拉')
+  const values = hostSelects[0].children.flat(2).filter((c) => c !== null && typeof c === 'object' && c.props && typeof c.props.value === 'string').map((c) => c.props.value)
+  ok(values.indexOf('complete') >= 0 && values.indexOf('dialog-error') >= 0 && values.indexOf('bell') >= 0, 'linux 选项为 freedesktop 主题音')
+  ok(values.indexOf('chimes.wav') < 0 && values.indexOf('Windows Error.wav') < 0, 'linux 选项不含 Windows wav')
+  ok(hostSelects[0].props.value === 'complete', 'linux complete 默认宿主音 = complete')
+  hostSelects[0].props.onChange({ target: { value: 'dialog-warning' } })
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostSounds && a.hostSounds.complete === 'dialog-warning'), 'linux 宿主音选择保存到宿主')
+}
+
 // 9e. 多 tab 领导锁：其他 tab 是 leader 时本 tab 只消费不播放（防双响）
 {
   const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
