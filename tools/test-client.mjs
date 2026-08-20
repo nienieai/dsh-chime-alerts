@@ -129,30 +129,34 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.gainPeaks.some((v) => Math.abs(v - 0.45) < 1e-9), '音量提升到 0.45')
 }
 
-// 2b. v0.3.15：九种音全部 sine 四音符（风格统一），方向语义正确
+// 2b. v0.3.16：九种音各有 1~4 音符、跳跃音型（非连续级进），方向语义正确
 {
   const env = makeEnv()
   const freqOf = async (kind) => {
-    const e2 = makeEnv(undefined, undefined, [{ seq: 1, kind, at: Date.now() }])
+    const seed = kind === 'subcomplete' ? { kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } } : undefined
+    const e2 = makeEnv(seed, undefined, [{ seq: 1, kind, at: Date.now() }])
     e2.tick()
     await settle()
     return e2.oscs.filter((o, i) => i % 2 === 0).map((o) => o.frequency.value)
   }
-  const bases = await freqOf('complete')
-  ok(bases.length === 4, 'complete 四音符')
-  ok(bases[0] < bases[1] && bases[1] < bases[2] && bases[2] < bases[3], 'complete 上行琶音')
-  const g = await freqOf('goalblocked')
-  ok(g.length === 4 && g.every((f) => f >= 250 && f <= 400), 'goalblocked 低音四连（250–400）')
-  const inter = await freqOf('interrupt')
-  ok(inter.length === 4 && inter[0] > inter[1] && inter[1] > inter[2] && inter[2] > inter[3], 'interrupt 快四连下行')
-  const fail = await freqOf('jobfail')
-  ok(fail.length === 4 && fail[0] > fail[1] && fail[1] > fail[2] && fail[2] > fail[3], 'jobfail 快四连下行')
-  const q = await freqOf('question')
-  ok(q.length === 4 && q[0] < q[1] && q[1] < q[2] && q[2] < q[3], 'question 四连上行')
-  const p = await freqOf('planreview')
-  ok(p.length === 4 && p[0] > p[1] && p[1] > p[2] && p[2] > p[3], 'planreview 四连下行')
+  const c = await freqOf('complete')
+  ok(c.length === 4 && c[0] < c[1] && c[1] < c[2] && c[2] < c[3], 'complete 四声上行琶音')
+  const sub = await freqOf('subcomplete')
+  ok(sub.length === 1, 'subcomplete 单声')
+  const jd = await freqOf('jobdone')
+  ok(jd.length === 3 && jd[0] < jd[1] && jd[1] < jd[2], 'jobdone 三声跳进上行（392→523→784）')
   const a = await freqOf('approval')
-  ok(a.length === 4 && a[0] > a[1] && a[1] < a[2] && a[2] > a[3], 'approval 叮咚门铃×2')
+  ok(a.length === 4 && a[0] > a[1] && a[1] < a[2] && a[2] > a[3], 'approval 叮咚大跳×2')
+  const q = await freqOf('question')
+  ok(q.length === 3 && q[0] < q[1] && q[1] < q[2] && q[1] - q[0] > 100, 'question 三声跳跃上行（含大跳）')
+  const p = await freqOf('planreview')
+  ok(p.length === 3 && p[0] > p[1] && p[1] > p[2], 'planreview 三声跳跃下行')
+  const g = await freqOf('goalblocked')
+  ok(g.length === 3 && g.every((f) => f >= 250 && f <= 400) && g[0] > g[1] && g[1] > g[2], 'goalblocked 低音三连下行')
+  const inter = await freqOf('interrupt')
+  ok(inter.length === 2 && inter[0] > inter[1], 'interrupt 双声下行')
+  const fail = await freqOf('jobfail')
+  ok(fail.length === 3 && fail[0] > fail[1] && fail[1] > fail[2] && fail[0] - fail[1] > 200, 'jobfail 三声大跳坠落下行')
 }
 
 // 3. 子任务音默认关闭 → 不播放
