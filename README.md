@@ -17,23 +17,13 @@
 - **中英双语界面**：设置页与通知按浏览器语言自动切换（中文环境不变，英文环境显示英文）
 - **Node 可跑的自动化测试**：`npm test`（155 项断言，无需浏览器/DSH）
 
-## 声音一览
+## 默认声音
 
-> v0.3.19 起九种合成音各有名字、1~4 声、连续/跳跃音阶、相同/不同间隔与时值、渐强渐弱、音色变化(sine/triangle)、尾音长短;**后台任务与子任务低调**;整体音量 0.45 + 2 倍频 sine 泛音 0.22(消除杂音)。v0.3.20 起声音下拉「默认」显示实际声音名;宿主蜂鸣开启时每行追加第二行(宿主音下拉 + 宿主试听,与浏览器试听分离)。**v0.4.0 起宿主音选项按平台**:Windows 19 种系统 wav / Linux 8 种 freedesktop 主题音 / macOS 11 种系统音。
+**默认声音全部是浏览器合成的**（Web Audio 振荡器实时生成，九种事件各有独立的音型：任务完成=渐强上行琶音、需要授权=慢叮咚、目标受阻=卡住低音等），**不附带任何音频文件，无版权、无许可证负担**，开箱即用可商用。
 
-| 事件 | 名字 | 检测依据（宿主半） | 默认音 |
-|---|---|---|---|
-| 任务完成 `complete` | **凯旋** | `agent/status` 回 idle + 会话日志最后 `turn/end` 原因 = completed（跳过 inbox 待处理） | 4 声短短短长·渐强 523→659→784→1047Hz（尾音 0.85s） |
-| 子任务完成 `subcomplete` | **轻叩** | 子代理（origin=subagent）回 idle 且 `turn/end` = completed，经 `agents.isOwnedBy` 映射回运行时根（主会话），支持多层嵌套 | 1 声低调 784Hz（vol 0.6） |
-| 后台任务完成 `jobdone` | **涟漪** | `jobs.onJobDone` 且 status=completed（跳过 subagent 作业，避免与子任务音双响） | 3 声短短长·渐弱·低调 392→523→784Hz |
-| 需要授权 `approval` | **门铃** | 会话日志 `approval/asked`（勿用 `approval/request` 瀑布：会被 UI 应答器先行认领） | 2 声慢叮咚·渐强 880→659Hz |
-| Agent 提问 `question` | **询问** | `tools/execute` 且 `exec.name === 'ask_user_question'` | 2 声上扬·渐强 523→784Hz |
-| 计划评审 `planreview` | **落定** | `tools/execute` 且 `exec.name === 'exit_plan_mode'`（计划模式退出前请求批准） | 3 声紧凑下行·渐弱 988→784→523Hz |
-| 目标受阻 `goalblocked` | **困顿** | 会话日志 `goal/change` 且 operation=block（或 goal.phase=blocked） | 3 声卡住低音·渐强 349→349→262Hz |
-| 其他打断 `interrupt` | **惊停** | `turn/end` 原因 = aborted / error / blocked / max-tokens（主代理与子代理均覆盖） | 2 声突停 880→440Hz（长音后戛然而止） |
-| 后台任务失败 `jobfail` | **坠落** | `jobs.onJobDone` 且 status=failed（跳过 subagent 作业，避免与打断音双响；bash 等非代理作业覆盖） | 3 声坠落·渐弱·低调 1047→698→494Hz |
-
-宿主音默认映射(v0.3.20 起可逐事件更换,按平台取默认)：Windows——凯旋→系统通知 / 轻叩→ding / 涟漪→系统通知 / 门铃→UAC 授权 / 询问→Windows Ding / 落定→Windows 默认 / 困顿→惊叹 / 惊停→邮件通知 / 坠落→错误;Linux——complete / message / dialog-warning / dialog-question / dialog-information / dialog-error 等 freedesktop 主题音;macOS——Glass / Pop / Ping / Tink / Sosumi / Basso / Blow 等系统音。
+- 每个事件可换其他内置音，或上传自定义音频（≤5MB，存本地磁盘）
+- 宿主蜂鸣（可选，默认关）使用**操作系统自带音效**：Windows 系统 wav / Linux freedesktop 主题音 / macOS 系统音——这些音效属于操作系统本身，其使用受操作系统许可条款约束，与插件默认的合成音无关；不开启宿主蜂鸣就完全不涉及
+- 宿主音默认映射（v0.3.20 起可逐事件更换，按平台取默认）：Windows——完成→系统通知 / 子任务→ding / 后台完成→系统通知 / 授权→UAC / 提问→Windows Ding / 评审→Windows 默认 / 受阻→惊叹 / 打断→邮件通知 / 失败→错误；Linux——complete / message / dialog-warning / dialog-question / dialog-information / dialog-error 等 freedesktop 主题音；macOS——Glass / Pop / Ping / Tink / Sosumi / Basso / Blow 等系统音
 
 ## 快速安装（动态插件，功能完整）
 
