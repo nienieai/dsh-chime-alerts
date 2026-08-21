@@ -1,5 +1,11 @@
 # 更新日志
 
+## v0.4.2
+
+- **每事件独立静音宿主音**：宿主蜂鸣开启时第二行新增宿主静音键（只静音该事件的宿主系统音，与主行静音键互不影响——主行静音键只关浏览器音）；`hostMuted` 存宿主 settings.json，宿主 `record()` 时跳过静音事件
+- **「桌面通知」改名为「网页通知」**：该通知由浏览器 Notification API 弹出（显示在系统通知中心但本质是网页权限），改名避免误解为宿主通知
+- 测试 +10（host +5：hostMuted 存读/静音事件不响/取消恢复；client +5：改名/第二行静音键渲染与保存/主行不受影响），宿主 61 项、客户端 94 项、合计 155 项
+
 ## v0.4.1
 
 - **宿主能力检测**：`sysget` 新增 `capBeep` 字段——宿主端探测响铃能力（win32 查 `wscript.exe` 是否在 PATH、linux 探测 canberra/paplay、darwin 探测 afplay；无 subprocess 服务时 false），结果缓存

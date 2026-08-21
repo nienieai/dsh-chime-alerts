@@ -438,8 +438,28 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   await settle()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   const switches = page.filter((n) => n.type === 'button' && n.props.role === 'switch')
-  ok(switches[3].props.disabled === true, 'Notification 缺失时桌面通知开关禁用')
+  ok(switches[3].props.disabled === true, 'Notification 缺失时网页通知开关禁用')
   ok(switches[2].props.disabled === undefined, '宿主蜂鸣开关不受影响（capBeep 未知不禁用）')
+}
+
+// 9j. v0.4.2：每事件宿主音独立静音键 + 开关改名「网页通知」
+{
+  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true })
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  let page = render(comp())
+  ok(byText(page, '网页通知') !== undefined, '开关改名为网页通知')
+  ok(!page.some((n) => n.type === 'span' && n.children !== undefined && n.children.some((c) => String(c).indexOf('桌面通知') === 0)), '不再显示「桌面通知」')
+  const allMutes = page.filter((n) => n.type === 'button' && n.props.className !== undefined && n.props.className.indexOf('snd-row-mute') === 0)
+  ok(allMutes.length === 18, '宿主行也各有 1 个静音键（主行 9 + 宿主行 9 = 18）')
+  // 每事件的主行/宿主行静音键交错排列：索引 0=complete主行, 1=complete宿主行
+  allMutes[1].props.onClick()
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostMuted && a.hostMuted.complete === true), '宿主静音键点击保存 hostMuted')
+  page = render(comp())
+  const allMutes2 = page.filter((n) => n.type === 'button' && n.props.className !== undefined && n.props.className.indexOf('snd-row-mute') === 0)
+  ok(allMutes2[1].props.className.indexOf(' off') >= 0 && allMutes2[1].props['aria-pressed'] === 'false', '宿主静音键显示静音态')
+  ok(allMutes2[0].props['aria-pressed'] === 'true', '主行静音键不受影响')
 }
 
 // 9e. 多 tab 领导锁：其他 tab 是 leader 时本 tab 只消费不播放（防双响）

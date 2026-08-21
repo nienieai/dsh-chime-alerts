@@ -364,5 +364,28 @@ function agent(id, origin, reasonKind, hasPending = false) {
   ok(g.capBeep === true, 'darwin afplay 在 PATH capBeep=true')
 }
 
+// 20. v0.4.2：每事件独立静音宿主音（hostMuted 存盘、record 时跳过静音事件）
+{
+  const env = makeEnv()
+  const s = await env.handlers.sysset({ hostMuted: { complete: true } })
+  ok(s.ok === true, 'sysset 保存 hostMuted')
+  const g = await env.handlers.sysget({})
+  ok(g.hostMuted !== undefined && g.hostMuted.complete === true, 'sysget 读回 hostMuted')
+  await env.handlers.sysset({ hostBeep: true })
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  await new Promise((r) => setTimeout(r, 30))
+  const before = env.spawns.length
+  ok(before >= 1, '未静音事件（approval）宿主音正常响')
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'idle' })
+  await new Promise((r) => setTimeout(r, 30))
+  ok(env.spawns.length === before, '静音事件（complete）宿主音不响')
+  await env.handlers.sysset({ hostMuted: { complete: false } })
+  env.emit('agent/status', { agent: agent('root2', 'main', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root2', 'main', 'completed'), status: 'idle' })
+  await new Promise((r) => setTimeout(r, 30))
+  ok(env.spawns.length > before, '取消静音后宿主音恢复')
+}
+
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
 process.exitCode = failures === 0 ? 0 : 1
