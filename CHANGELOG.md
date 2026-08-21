@@ -1,5 +1,11 @@
 # 更新日志
 
+## v0.4.1
+
+- **宿主能力检测**：`sysget` 新增 `capBeep` 字段——宿主端探测响铃能力（win32 查 `wscript.exe` 是否在 PATH、linux 探测 canberra/paplay、darwin 探测 afplay；无 subprocess 服务时 false），结果缓存
+- **不支持时控件变灰**：`capBeep=false` 时宿主蜂鸣开关、宿主音下拉、宿主试听按钮全部禁用（不可点击 + 变灰样式）；浏览器无 Notification API 时桌面通知开关禁用；`capBeep` 未知（如 sysget 未返回）时不禁用，避免误伤
+- 测试 +10（host +5：win32/无 subprocess/linux 无播放器/darwin capBeep；client +5：宿主控件禁用/通知开关禁用/不受影响场景），宿主 56 项、客户端 89 项、合计 145 项
+
 ## v0.4.0
 
 - **跨平台宿主蜂鸣**：系统音按平台分发——Windows 保持 `wscript`+WMP 播系统 wav；**Linux** 探测 `canberra-gtk-play`（无则回退 `paplay`）播 freedesktop 主题音（`/usr/share/sounds/freedesktop/stereo/*.oga`）；**macOS** 用 `afplay` 播 `/System/Library/Sounds` 系统音

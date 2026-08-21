@@ -29,28 +29,31 @@ function makeEnv(opts = {}) {
   ]
   const ctx = {
     get(name) {
-      if (name === 'subprocess') return {
-        spawn: (spOpts) => {
-          spawns.push(spOpts)
-          const argv0 = spOpts.argv && spOpts.argv[0]
-          if (spOpts.argv && argv0 && argv0.indexOf('cmd.exe') >= 0) {
-            return {
-              done: Promise.resolve({ exitCode: 0 }),
-              collected: { stdout: { finalize: () => ({ text: opts.userProfileText ?? 'C:\\Users\\ns' }) } },
+      if (name === 'subprocess') {
+        if (opts.noSubprocess) return undefined
+        return {
+          spawn: (spOpts) => {
+            spawns.push(spOpts)
+            const argv0 = spOpts.argv && spOpts.argv[0]
+            if (spOpts.argv && argv0 && argv0.indexOf('cmd.exe') >= 0) {
+              return {
+                done: Promise.resolve({ exitCode: 0 }),
+                collected: { stdout: { finalize: () => ({ text: opts.userProfileText ?? 'C:\\Users\\ns' }) } },
+              }
             }
-          }
-          if (argv0 === 'sh') {
-            const c = spOpts.argv[2] || ''
-            if (c.indexOf('command -v') >= 0) {
-              const probeOk = c.indexOf('canberra-gtk-play') >= 0 ? (opts.canberraProbe !== false) : true
-              return { done: Promise.resolve({ exitCode: probeOk ? 0 : 1 }), collected: {} }
+            if (argv0 === 'sh') {
+              const c = spOpts.argv[2] || ''
+              if (c.indexOf('command -v') >= 0) {
+                const probeOk = c.indexOf('canberra-gtk-play') >= 0 ? (opts.canberraProbe !== false) : (opts.paplayProbe !== false)
+                return { done: Promise.resolve({ exitCode: probeOk ? 0 : 1 }), collected: {} }
+              }
+              if (c.indexOf('printf') >= 0) {
+                return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { finalize: () => ({ text: opts.homeText ?? '/home/user' }) } } }
+              }
             }
-            if (c.indexOf('printf') >= 0) {
-              return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { finalize: () => ({ text: opts.homeText ?? '/home/user' }) } } }
-            }
-          }
-          return { done: Promise.resolve({ exitCode: 0 }), collected: {} }
-        },
+            return { done: Promise.resolve({ exitCode: 0 }), collected: {} }
+          },
+        }
       }
       if (name === 'fs') return fsMock
       if (name === 'sandboxPolicy') return { workspaceRoot: opts.workspaceRoot ?? 'C:/ws' }
@@ -336,6 +339,29 @@ function agent(id, origin, reasonKind, hasPending = false) {
   await new Promise((r) => setTimeout(r, 30))
   const sp = env.spawns[env.spawns.length - 1]
   ok(sp !== undefined && sp.argv[0] === 'afplay' && sp.argv[1] === '/System/Library/Sounds/Glass.aiff', 'darwin 走 afplay 系统音')
+}
+
+// 19. v0.4.1：宿主响铃能力检测（sysget 返回 capBeep）
+{
+  const env = makeEnv()
+  const g = await env.handlers.sysget({})
+  ok(g.capBeep === true, 'win32 支持响铃（wscript 在 PATH）capBeep=true')
+  ok(env.spawns.some((sp) => sp.argv && sp.argv[3] === 'where wscript'), 'win32 检测走 cmd where wscript')
+}
+{
+  const env = makeEnv({ noSubprocess: true })
+  const g = await env.handlers.sysget({})
+  ok(g.capBeep === false, '无 subprocess 服务 capBeep=false')
+}
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' }, canberraProbe: false, paplayProbe: false })
+  const g = await env.handlers.sysget({})
+  ok(g.capBeep === false, 'linux 无播放器 capBeep=false')
+}
+{
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'darwin' } })
+  const g = await env.handlers.sysget({})
+  ok(g.capBeep === true, 'darwin afplay 在 PATH capBeep=true')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

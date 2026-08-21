@@ -11,7 +11,7 @@ const ok = (cond, label) => {
   else { failures++; console.log('FAIL', label) }
 }
 
-function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], oldLegacyLocal = undefined, sysgetRes = { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, loadallRes = { ok: true, list: [] }, loadaudioRes = { ok: false }) {
+function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], oldLegacyLocal = undefined, sysgetRes = { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, loadallRes = { ok: true, list: [] }, loadaudioRes = { ok: false }, opts = {}) {
   // 浏览器全局假体（每个场景独立）
   const storage = new Map()
   if (seedLocal !== undefined) storage.set('dsh-chime-alerts-v1', JSON.stringify(seedLocal))
@@ -32,6 +32,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
     close() {}
     onclick = null
   }
+  if (opts.noNotification) { delete globalThis.Notification }
   globalThis.window = {
     AudioContext: class {
       constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
@@ -414,6 +415,31 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   hostSelects[0].props.onChange({ target: { value: 'dialog-warning' } })
   await settle()
   ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostSounds && a.hostSounds.complete === 'dialog-warning'), 'linux 宿主音选择保存到宿主')
+}
+
+// 9h. v0.4.1：宿主响铃不支持（capBeep=false）时宿主蜂鸣相关控件禁用变灰
+{
+  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: false })
+  await settle()
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const switches = page.filter((n) => n.type === 'button' && n.props.role === 'switch')
+  ok(switches.length === 4, '四个开关仍在（含禁用态）')
+  ok(switches[2].props.disabled === true && switches[2].props.onClick === undefined, '宿主蜂鸣开关禁用且不可点击')
+  ok(switches[3].props.disabled === undefined, '桌面通知开关不受宿主能力影响')
+  const hostSelect = page.find((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0)
+  ok(hostSelect !== undefined && hostSelect.props.disabled === true, '宿主音下拉禁用')
+  const hostPreviewBtn = page.find((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0))
+  ok(hostPreviewBtn !== undefined && hostPreviewBtn.props.disabled === true, '宿主试听按钮禁用')
+}
+
+// 9i. v0.4.1：浏览器不支持 Notification 时桌面通知开关禁用
+{
+  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, undefined, undefined, { noNotification: true })
+  await settle()
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const switches = page.filter((n) => n.type === 'button' && n.props.role === 'switch')
+  ok(switches[3].props.disabled === true, 'Notification 缺失时桌面通知开关禁用')
+  ok(switches[2].props.disabled === undefined, '宿主蜂鸣开关不受影响（capBeep 未知不禁用）')
 }
 
 // 9e. 多 tab 领导锁：其他 tab 是 leader 时本 tab 只消费不播放（防双响）
