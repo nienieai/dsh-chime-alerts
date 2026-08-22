@@ -131,6 +131,31 @@ function agent(id, origin, reasonKind, hasPending = false) {
   ok(env.pull().events.some((e) => e.kind === 'planreview'), 'exit_plan_mode → planreview')
 }
 
+// 6b. 动态插件授权（cordis_run 返回 awaiting user approval → pluginapproval；v0.4.4/v0.4.6）
+{
+  const env = makeEnv()
+  env.emit('tools/result', { name: 'cordis_run', agent: { id: 'root' }, arguments: { pluginId: 'tst-2' } },
+    { message: { content: [{ type: 'text', text: 'tst-2/pkg-2 is awaiting user approval (run-2).' }] } })
+  const ev = env.pull().events.find((e) => e.kind === 'pluginapproval')
+  ok(ev !== undefined && ev.tool === 'cordis_run', 'cordis_run awaiting approval → pluginapproval')
+}
+
+// 6b2. 嵌套结构（会话日志形状 content[].content[].text；v0.4.5 深度收集）
+{
+  const env = makeEnv()
+  env.emit('tools/result', { name: 'cordis_run', agent: { id: 'root' } },
+    { message: { content: [{ type: 'tool-result', content: [{ type: 'text', text: 'tst-3/pkg-4 is awaiting user approval (run-4).' }] }] } })
+  const ev = env.pull().events.find((e) => e.kind === 'pluginapproval')
+  ok(ev !== undefined && ev.tool === 'cordis_run', '嵌套 content 也能命中 pluginapproval')
+}
+
+// 6c. 其他工具结果不触发 approval
+{
+  const env = makeEnv()
+  env.emit('tools/result', { name: 'pwsh', agent: { id: 'root' } }, { message: { content: [{ type: 'text', text: 'ok' }] } })
+  ok(!env.pull().events.some((e) => e.kind === 'approval'), '其他工具结果不触发 approval')
+}
+
 // 7. 目标受阻
 {
   const env = makeEnv()

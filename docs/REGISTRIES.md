@@ -35,7 +35,7 @@
 ```json
 {
   "name": "dsh-chime-alerts",
-  "description": "九类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + Windows 系统蜂鸣混合发声，每事件独立开关/声音/音量，工作区快捷静音。",
+  "description": "十类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / 插件授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + 系统蜂鸣混合发声，每事件独立开关/声音/音量，工作区快捷静音。",
   "repo": "https://github.com/nienieai/dsh-chime-alerts",
   "npm": "dsh-chime-alerts",
   "tags": ["notification", "sound", "audio", "提醒", "声音"],

@@ -1,5 +1,21 @@
 # 更新日志
 
+## v0.4.6
+
+- **「插件授权」细分为独立事件（第十个事件）**：动态 Cordis 插件等待批准（`cordis_run` 返回 awaiting user approval）不再复用「需要授权」，改为设置页「需要人介入时」分组下的独立「插件授权」项——独立开关、独立声音（默认「门铃 · 短叮咚」，与「需要授权」的慢叮咚区分）、独立音量、独立宿主音与独立静音键
+- 宿主 `tools/result` 命中后记录 `pluginapproval` 事件；三平台宿主默认音与「需要授权」一致（UAC.wav / dialog-warning / Ping.aiff）
+- 测试 +3（client：10 张卡片 / 渲染「插件授权」行 / 静音键 20 个；host 断言改为 pluginapproval），宿主 64 项、客户端 97 项、合计 161 项
+
+## v0.4.5
+
+- **修复 v0.4.4 动态插件授权声音的漏检**：`tools/result` 的真实运行时文本可能嵌在多层嵌套里（`content[].content[].text`，与会话日志形状一致），单层解析会漏掉；改为**深度收集**所有文本字段后再匹配 `awaiting user approval`
+- 测试 +1（嵌套结构命中 awaiting approval），宿主 64 项、客户端 94 项、合计 158 项
+
+## v0.4.4
+
+- **动态插件授权也有声音**：实测发现 cordis 插件（`cordis_run`）的授权**不经过 DSH approval 服务**（不会产生 `approval/asked` 会话事件，会话日志中全部授权事件均为工具授权），原「需要授权」声音收不到它；现新增宿主监听 `tools/result`——`cordis_run` 返回文本含 `awaiting user approval` 时按「需要授权」事件发声（复用该事件的开关/音量/宿主音配置）
+- 测试 +2（host：cordis_run 等待授权 → approval；其他工具结果不触发），宿主 63 项、客户端 94 项、合计 157 项
+
 ## v0.4.3
 
 - **文档（仅 README，代码无改动）**：删除「声音一览」表格，新增「默认声音」说明——**默认声音全部为浏览器 Web Audio 合成音，实时生成、不附带任何音频文件，无版权、无许可证负担**；宿主系统音效（Windows wav / freedesktop / macOS）属操作系统自带，受系统许可条款约束，且宿主蜂鸣默认关闭、可选开启

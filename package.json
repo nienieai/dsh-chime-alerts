@@ -1,7 +1,7 @@
 {
   "name": "dsh-chime-alerts",
-  "version": "0.4.3",
-  "description": "DeepSeek Harness plugin: sound alerts for nine agent events — completion, subagent completion, background-job completion, approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + Windows system beep, per-event toggles/sounds/volume, quick-mute button)",
+  "version": "0.4.6",
+  "description": "DeepSeek Harness plugin: sound alerts for ten agent events — completion, subagent completion, background-job completion, approval, plugin approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + system beep, per-event toggles/sounds/volume, quick-mute button)",
   "license": "MIT",
   "author": {
     "name": "dsh-chime-alerts contributors"
@@ -65,8 +65,8 @@
   },
   "koishi": {
     "description": {
-      "zh": "九类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + Windows 系统蜂鸣混合发声，每个事件独立开关、独立声音、独立音量，侧栏工作区快捷静音。",
-      "en": "Sound alerts for nine agent events: completion, subagent completion, background-job completion, approval, question, plan-review, goal-blocked, interruption, and background-job failure. Hybrid playback (browser Web Audio + Windows system beep) with per-event toggles, sounds, and volume, plus workspace quick-mute buttons."
+      "zh": "十类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / 插件授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + 系统蜂鸣混合发声，每个事件独立开关、独立声音、独立音量，侧栏工作区快捷静音。",
+      "en": "Sound alerts for ten agent events: completion, subagent completion, background-job completion, approval, plugin approval, question, plan-review, goal-blocked, interruption, and background-job failure. Hybrid playback (browser Web Audio + system beep) with per-event toggles, sounds, and volume, plus workspace quick-mute buttons."
     },
     "categories": [
       "notification"

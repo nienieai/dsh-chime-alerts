@@ -6,3 +6,5 @@ Thumbs.db
 runtime/
 .vscode/
 .idea/
+.chunks/
+tools/chunk-src.mjs

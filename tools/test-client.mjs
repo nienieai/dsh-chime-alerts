@@ -111,11 +111,12 @@ function render(node) {
 const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.children.some((c) => String(c).indexOf(text) === 0))
 const settle = () => new Promise((r) => setTimeout(r, 10))
 
-// 1. 默认值与九类事件卡片
+// 1. 默认值与十类事件卡片（v0.4.6 新增 pluginapproval）
 {
   const env = makeEnv()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
-  ok(page.filter((n) => n.type === 'div' && (n.props.className === 'snd-row' || n.props.className === 'snd-row off')).length === 9, '设置页渲染 9 张事件卡片')
+  ok(page.filter((n) => n.type === 'div' && (n.props.className === 'snd-row' || n.props.className === 'snd-row off')).length === 10, '设置页渲染 10 张事件卡片')
+  ok(byText(page, '插件授权') !== undefined, '渲染「插件授权」事件行')
   ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.id === 'chime'), '注册设置分区 chime')
 }
 
@@ -342,8 +343,8 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   let page = render(comp())
   const mutes = page.filter((n) => n.type === 'button' && n.props.className !== undefined && n.props.className.indexOf('snd-row-mute') === 0)
-  ok(mutes.length === 9, '每行一个静音图标按钮')
-  ok(page.filter((n) => n.type === 'span' && n.props.className === 'snd-vol-val').length === 9, '每行一个音量数值')
+  ok(mutes.length === 10, '每行一个静音图标按钮')
+  ok(page.filter((n) => n.type === 'span' && n.props.className === 'snd-vol-val').length === 10, '每行一个音量数值')
   ok(mutes[0].props.className === 'snd-row-mute', '默认非静音态')
   ok(mutes[1].props.className === 'snd-row-mute off', '子任务行默认静音态')
   mutes[0].props.onClick()
@@ -377,8 +378,8 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   let page = render(comp())
   ok(byText(page, '宿主音') !== undefined, '宿主蜂鸣开启时渲染宿主音行')
-  ok(page.filter((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0)).length === 9, '每行一个宿主试听按钮')
-  ok(page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0).length === 9, '每行一个宿主音下拉')
+  ok(page.filter((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0)).length === 10, '每行一个宿主试听按钮')
+  ok(page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0).length === 10, '每行一个宿主音下拉')
   const hostPreview = page.find((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => typeof c === 'string' && c.indexOf('宿主试听') === 0))
   hostPreview.props.onClick()
   await settle()
@@ -407,7 +408,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   const page = render(comp())
   const hostSelects = page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0)
-  ok(hostSelects.length === 9, 'linux 每行一个宿主音下拉')
+  ok(hostSelects.length === 10, 'linux 每行一个宿主音下拉')
   const values = hostSelects[0].children.flat(2).filter((c) => c !== null && typeof c === 'object' && c.props && typeof c.props.value === 'string').map((c) => c.props.value)
   ok(values.indexOf('complete') >= 0 && values.indexOf('dialog-error') >= 0 && values.indexOf('bell') >= 0, 'linux 选项为 freedesktop 主题音')
   ok(values.indexOf('chimes.wav') < 0 && values.indexOf('Windows Error.wav') < 0, 'linux 选项不含 Windows wav')
@@ -451,7 +452,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(byText(page, '网页通知') !== undefined, '开关改名为网页通知')
   ok(!page.some((n) => n.type === 'span' && n.children !== undefined && n.children.some((c) => String(c).indexOf('桌面通知') === 0)), '不再显示「桌面通知」')
   const allMutes = page.filter((n) => n.type === 'button' && n.props.className !== undefined && n.props.className.indexOf('snd-row-mute') === 0)
-  ok(allMutes.length === 18, '宿主行也各有 1 个静音键（主行 9 + 宿主行 9 = 18）')
+  ok(allMutes.length === 20, '宿主行也各有 1 个静音键（主行 10 + 宿主行 10 = 20）')
   // 每事件的主行/宿主行静音键交错排列：索引 0=complete主行, 1=complete宿主行
   allMutes[1].props.onClick()
   await settle()
