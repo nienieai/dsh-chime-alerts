@@ -8,3 +8,4 @@ runtime/
 .idea/
 .chunks/
 tools/chunk-src.mjs
+.test-out.txt

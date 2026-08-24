@@ -1,6 +1,6 @@
 {
   "name": "dsh-chime-alerts",
-  "version": "0.4.6",
+  "version": "0.5.0",
   "description": "DeepSeek Harness plugin: sound alerts for ten agent events — completion, subagent completion, background-job completion, approval, plugin approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + system beep, per-event toggles/sounds/volume, quick-mute button)",
   "license": "MIT",
   "author": {
@@ -22,6 +22,9 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": {
+      "default": "./lib/client.web.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -35,8 +38,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node tools/test-host.mjs && node tools/test-client.mjs",
-    "check": "node --check lib/index.js && node tools/syntax-check.mjs"
+    "test": "node tools/test-host.mjs && node tools/test-client.mjs && node tools/test-client-web.mjs",
+    "check": "node --check lib/index.js && node --check lib/client.web.js && node tools/syntax-check.mjs"
   },
   "keywords": [
     "dsh",
@@ -58,6 +61,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
     }
   },
   "peerDependencies": {

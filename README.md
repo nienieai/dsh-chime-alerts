@@ -11,8 +11,8 @@
 - **工作区静音按钮**：侧栏每个工作区旁的喇叭按钮，按工作区独立静音，已静音常驻橙色斜杠标志
 - **并行/后台任务逐个响**：3 个并行子代理分别完成 = 3 声（节流按种类+来源独立）
 - **宿主蜂鸣跨平台**：Windows 播系统 wav（`wscript`+WMP）；Linux 播 freedesktop 主题音（`canberra-gtk-play` → 回退 `paplay`）；macOS 用 `afplay` 播系统音
-- **声音可替换**：每事件可换内置音或上传自定义音频（≤5MB）
-- **中英双语界面**、**Node 可跑的自动化测试**（`npm test`，161 项断言）
+- **声音可替换**：每事件可换内置音或上传自定义音频（动态 ≤5MB / 静态 ≤3MB）
+- **中英双语界面**、**Node 可跑的自动化测试**（`npm test`，184 项断言）
 
 ## 默认声音
 
@@ -20,11 +20,24 @@
 
 宿主蜂鸣（可选，默认关）使用**操作系统自带音效**（Windows wav / Linux freedesktop / macOS 系统音），受系统许可条款约束；不开启就完全不涉及。
 
-## 安装（动态插件，功能完整）
+## 安装
+
+### 方式 A：动态插件（功能完整，推荐）
 
 1. `cordis_define`：`code.host` 粘贴 [`lib/host.js`](lib/host.js) 全文，`code.client` 粘贴 [`lib/client.js`](lib/client.js) 全文（`kind: "new"`，idPrefix 自取）
 2. `cordis_run`（mode `run`）激活，客户端包首次激活需在页面上批准
 3. DSH 重启后按同样步骤重装；宿主音/自定义音频存本地磁盘，其余设置存浏览器，重装后自动恢复
+
+### 方式 B：静态安装（npm，v0.5.0 起双端完整、开箱即响）
+
+```
+dsh plugin --profile web add dsh-chime-alerts
+```
+
+- 宿主半（事件记录 + 系统蜂鸣）经 `lib/index.js` 自动加载；客户端半（浏览器合成音 + 设置页 + 工作区静音）经 `exports["./client"]` 以经典脚本加载（`dsh.client.platform: "web"`）
+- 客户端直接订阅 DSH 会话/工作区快照检测事件，无需动态桥；设置存浏览器（键与动态版相同，**切换安装方式设置自动继承**）
+- **静态版差异**：「插件授权」无快照信号（仅宿主蜂鸣兜底）、「其他打断」并入「任务完成」、无宿主音配置 UI（宿主蜂鸣需手动编辑 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\dsh-chime-alerts-settings.json`）、自定义音频上限 3MB
+- 更新静态插件后需**重启 DSH** 生效
 
 ## 设置页
 
@@ -55,10 +68,11 @@
 ```
 lib/host.js          宿主半（函数体，动态安装粘贴；静态入口也消费它）
 lib/client.js        客户端半（函数体，动态安装粘贴）
+lib/client.web.js    静态客户端（经典脚本封套，npm 安装使用）
 lib/index.js         静态宿主入口（npm 包 main）
 lib/types/index.d.ts 类型声明
 cordis.patch.yml     bundle 补丁层
-tools/               syntax-check + 宿主/客户端测试
+tools/               syntax-check + 宿主/客户端/静态客户端测试
 docs/REGISTRIES.md   社区市场上架指南
 ```
 
@@ -67,7 +81,7 @@ docs/REGISTRIES.md   社区市场上架指南
 本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档），详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
-npm test      # 宿主 64 + 客户端 97 项断言（Node 即可，无需浏览器/DSH）
+npm test      # 宿主 64 + 客户端 97 + 静态客户端 23 项断言（Node 即可，无需浏览器/DSH）
 npm run check # 语法检查
 ```
 

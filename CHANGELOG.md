@@ -1,5 +1,15 @@
 # 更新日志
 
+## v0.5.0
+
+- **静态安装开箱即响 + 网页端完整（修复 v0.4.6 静态安装不响的问题）**：v0.4.6 以 npm/独立目录方式安装时只有宿主半——无浏览器声音、无设置页、宿主蜂鸣默认关，等于装了不响；v0.5.0 提供完整静态客户端，静态安装后浏览器合成音**默认开启直接响**，设置页/工作区静音/网页通知全部可用，零手动配置
+- **静态化完成（npm 安装可双端工作）**：新增 `lib/client.web.js`——以 DSH 标准经典脚本封套（`window.__ModuleLoader__.load`，与社区验证的 dsh-plugin-notify-sound 同形态）实现客户端半，**不再依赖动态桥**，直接订阅 `sessions`/`workspaces` 客户端运行时快照自行检测事件
+- 事件检测对照（静态版）：`complete`（running→false）/ `subcomplete`（subagent 会话按 parentId 链归属根）/ `jobdone`、`jobfail`（jobsBySession 终态，subagent job 跳过）/ `approval`、`question`、`planreview`（pendingInteraction 上升沿）/ `goalblocked`（goal 投影进入 blocked）；**「插件授权」无快照信号**（由宿主半 `tools/result` 检测 + 宿主蜂鸣兜底）、**「其他打断」并入「任务完成」**（快照无 reason 字段）
+- 配置：浏览器 localStorage（键 `dsh-chime-alerts-v1`，与动态版同键，**既有设置自动继承**）；自定义音频以 data URL 存 localStorage（≤3MB，替代动态版宿主磁盘音频库）；静态版设置页隐藏宿主蜂鸣相关 UI（宿主蜂鸣需手动编辑 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\dsh-chime-alerts-settings.json`）
+- `package.json` 新增 `exports["./client"]` + `dsh.client: { platform: "web", inject: [...] }`；`npm run check` 增加 client.web.js 校验
+- 测试 +23（新增 `tools/test-client-web.mjs`：ModuleLoader 封套、八类快照检测、静音、节流、设置页、localStorage 继承、音频库），宿主 64 项、客户端 97 项、静态客户端 23 项、合计 184 项
+- **已知差异（静态 vs 动态）**：无「插件授权」浏览器音、无「其他打断」区分、无宿主音配置 UI、自定义音频上限 3MB；更新静态插件后需重启 DSH
+
 ## v0.4.6
 
 - **「插件授权」细分为独立事件（第十个事件）**：动态 Cordis 插件等待批准（`cordis_run` 返回 awaiting user approval）不再复用「需要授权」，改为设置页「需要人介入时」分组下的独立「插件授权」项——独立开关、独立声音（默认「门铃 · 短叮咚」，与「需要授权」的慢叮咚区分）、独立音量、独立宿主音与独立静音键
