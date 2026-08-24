@@ -1,5 +1,9 @@
 # 更新日志
 
+## v0.5.1
+
+- **修复静态宿主半加载失败**：`lib/index.js` 原用「默认导出函数」形式包装 host.js,Cordis loader 只识别顶层命名导出 `inject`/`apply`,导致 `inject: ['timer']` 不被读取,静态安装报 `cannot get property "timer" without inject`（截图「Failed to load plugins」）；改为标准 Cordis 插件导出（`export const inject: ['timer']` + `export function apply`）,静态安装恢复正常
+
 ## v0.5.0
 
 - **静态安装开箱即响 + 网页端完整（修复 v0.4.6 静态安装不响的问题）**：v0.4.6 以 npm/独立目录方式安装时只有宿主半——无浏览器声音、无设置页、宿主蜂鸣默认关，等于装了不响；v0.5.0 提供完整静态客户端，静态安装后浏览器合成音**默认开启直接响**，设置页/工作区静音/网页通知全部可用，零手动配置
