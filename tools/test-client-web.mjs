@@ -294,6 +294,42 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
   globalThis.fetch = origFetch
 }
 
+// 9c. v0.5.5：宿主蜂鸣开启时每事件展开「宿主音」行（下拉/单独静音/宿主试听）+ 版本标注
+{
+  const calls = []
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (url, opts) => {
+    const u = String(url)
+    calls.push({ url: u, opts: opts || {} })
+    if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, platform: 'win32', capBeep: true }) })
+    if (u.indexOf('/sysset') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })
+    if (u.indexOf('/sysbeep') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })
+    return Promise.reject(new Error('unexpected fetch ' + u))
+  }
+  const env = makeEnv()
+  await new Promise((r) => setTimeout(r, 10))
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const hostRows = page.filter((n) => n.type === 'div' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostrow') >= 0)
+  ok(hostRows.length === 10, '宿主蜂鸣开启时展开 10 行宿主音')
+  const hostSelects = page.filter((n) => n.type === 'select' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-host-select') >= 0)
+  ok(hostSelects.length === 10, '每行一个宿主音下拉')
+  const hostMutes = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0)
+  ok(hostMutes.length === 10, '每行一个宿主静音键')
+  const hostPreviews = page.filter((n) => n.type === 'button' && n.props.className === 'snd-btn' && n.children !== undefined && n.children.some((c) => String(c) === '宿主试听'))
+  ok(hostPreviews.length === 10, '每行一个宿主试听按钮')
+  const before = calls.length
+  hostSelects[0].props.onChange({ target: { value: 'Windows Error.wav' } })
+  ok(calls.length > before && calls.slice(before).some((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('Windows Error.wav') >= 0), '宿主音选择写宿主（sysset hostSounds）')
+  const before2 = calls.length
+  hostMutes[1].props.onClick()
+  ok(calls.length > before2 && calls.slice(before2).some((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('hostMuted') >= 0), '宿主静音键写宿主（sysset hostMuted）')
+  const before3 = calls.length
+  hostPreviews[2].props.onClick()
+  ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
+  ok(byText(page, '静态版 v0.5.5') !== undefined, '设置页底部标注版本 v0.5.5')
+  globalThis.fetch = origFetch
+}
+
 // 10. 网页通知触发
 {
   const env = makeEnv()

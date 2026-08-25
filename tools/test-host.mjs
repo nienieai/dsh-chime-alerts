@@ -454,10 +454,11 @@ function agent(id, origin, reasonKind, hasPending = false) {
     webServerRegister: (route) => { routes.push(route); return () => {} },
   })
   await new Promise((r) => setTimeout(r, 30))
-  ok(routes.length === 2, '无 harness 时注册 sysget/sysset HTTP 端点')
+  ok(routes.length === 3, '无 harness 时注册 sysget/sysset/sysbeep HTTP 端点')
   const sysgetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysget')
   const syssetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysset')
-  ok(sysgetRoute !== undefined && syssetRoute !== undefined, '端点路径正确（/dsh-chime-alerts/sysget|sysset）')
+  const sysbeepRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysbeep')
+  ok(sysgetRoute !== undefined && syssetRoute !== undefined && sysbeepRoute !== undefined, '端点路径正确（sysget|sysset|sysbeep）')
   if (sysgetRoute !== undefined) {
     let status = 0
     let body = ''
@@ -470,6 +471,9 @@ function agent(id, origin, reasonKind, hasPending = false) {
     const parsed = JSON.parse(body)
     ok(parsed.hostBeep === true, '启动自动读盘恢复 hostBeep=true（nodeIo 直读 DSH 目录）')
     ok(parsed.dir === 'C:/Users/ns/.dsh/plugins/dsh-chime-alerts', '存储根 = DSH 数据目录（dshHomePath(plugins, dsh-chime-alerts)）')
+    // v0.5.5：sysget 回传每事件宿主音与宿主静音
+    ok(parsed.hostSounds !== undefined && parsed.hostSounds.complete === 'Windows Notify System Generic.wav', 'sysget 回传 hostSounds')
+    ok(parsed.hostMuted !== undefined && parsed.hostMuted.jobfail === true, 'sysget 回传 hostMuted')
   }
   if (syssetRoute !== undefined) {
     let status = 0
@@ -494,6 +498,39 @@ function agent(id, origin, reasonKind, hasPending = false) {
     const res2 = { writeHead: (s) => { status2 = s }, end: (b) => { body2 = String(b || '') } }
     await sysgetRoute.handler({ method: 'GET' }, res2)
     ok(JSON.parse(body2).hostBeep === false, 'HTTP 写后 sysget 读回 false')
+  }
+  // v0.5.5：宿主试听端点 sysbeep（POST {kind} → 宿主播该事件宿主音）
+  if (sysbeepRoute !== undefined) {
+    let sbStatus = 0
+    let sbBody = ''
+    const sbRes = {
+      writeHead: (s) => { sbStatus = s },
+      end: (b) => { sbBody = String(b || '') },
+    }
+    const sbReq = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ kind: 'approval' })) },
+    }
+    await sysbeepRoute.handler(sbReq, sbRes)
+    ok(sbStatus === 200 && JSON.parse(sbBody).ok === true, 'sysbeep POST 200 ok')
+    await new Promise((r) => setTimeout(r, 30))
+    const sp = env.spawns.find((s) => Array.isArray(s.argv) && typeof s.argv[0] === 'string' && s.argv[0].indexOf('wscript') >= 0)
+    ok(sp !== undefined, 'sysbeep 触发 wscript 播放')
+    const vbs = sp !== undefined ? env.fsFiles.get('n:' + sp.argv[1]) : undefined
+    ok(vbs !== undefined && vbs.indexOf('Windows User Account Control.wav') >= 0, 'sysbeep 播该事件当前宿主音（approval 默认 UAC）')
+    let badStatus = 0
+    let badBody = ''
+    const badRes = { writeHead: (s) => { badStatus = s }, end: (b) => { badBody = String(b || '') } }
+    const badReq = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ kind: 'nope' })) },
+    }
+    await sysbeepRoute.handler(badReq, badRes)
+    ok(badStatus === 400 && JSON.parse(badBody).ok === false, 'sysbeep 未知种类 400 拒绝')
+    let getStatus = 0
+    const getRes = { writeHead: (s) => { getStatus = s }, end: () => {} }
+    await sysbeepRoute.handler({ method: 'GET' }, getRes)
+    ok(getStatus === 405, 'sysbeep GET 405')
   }
 }
 

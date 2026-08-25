@@ -1,5 +1,14 @@
 # 更新日志
 
+## v0.5.5
+
+- **静态设置页补上「每事件宿主音」配置（宿主蜂鸣开关展开宿主音行）**：动态版一直有——宿主蜂鸣开启后每个事件展开第二行「宿主音」（宿主音下拉 / 独立静音键 / 宿主试听），静态版此前只有总开关，选不了每个事件的宿主音。现在与动态版 UI 对齐：
+  - 宿主 HTTP `/sysget` 回传 `hostSounds`/`hostMuted`，客户端启动时读回
+  - 新增 `/dsh-chime-alerts/sysbeep`（POST `{kind}`）宿主试听端点——直接播该事件当前配置的宿主音（不依赖宿主蜂鸣总开关）
+  - 宿主音选项按平台（win32 系统 wav / linux freedesktop 主题音 / darwin 系统音），选择即写盘持久化；`capBeep=false` 时整行禁用
+- **设置页底部标注版本（v0.5.5）**：一眼确认页面加载的是哪个版本的代码，排查「页面还是旧代码」类问题时不用再猜
+- 测试 +11（host：sysbeep 端点注册 / POST 200 / 触发 wscript / 播当前宿主音 / 未知种类 400 / GET 405 / sysget 回传 hostSounds+hostMuted；client-web：10 行宿主音展开 / 下拉 / 静音键 / 试听按钮 / 选择写盘 / 静音写盘 / 试听调 sysbeep / 版本标注），宿主 85 项、客户端 97 项、静态客户端 37 项、合计 219 项
+
 ## v0.5.4
 
 - **蜂鸣 vbs 走 nodeIo 直通车（静态安装「开关开了也没宿主音」的最后一块）**：`writeBeepVbs` 此前仍经沙箱 fs 写 vbs 到 `%DSH_HOME%\plugins\dsh-chime-alerts`——工作区外写入要先吃一次 `FS_SANDBOX_DENIED` 再靠 `danger-full-access` 重试成功，链路脆弱；现在静态宿主半与设置文件同通道（`node:fs` 直通车），一步到位，宿主蜂鸣路径不再依赖沙箱 fs
