@@ -4,14 +4,16 @@
 官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
 （Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
 
+> **状态（2026-08-25）**：npm 已发布 `dsh-chime-alerts@0.5.6`（`latest`），GitHub Release v0.5.6 为 Latest；静态安装与动态版功能对齐（含宿主蜂鸣开关 / 每事件宿主音配置 / 宿主试听）。
+
 ## 发布前检查
 
 - [x] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（`nienieai/dsh-chime-alerts`）
 - [ ] `LICENSE` 版权行换成作者真名/昵称
-- [ ] npm 包名 `dsh-chime-alerts` 未被占用（`npm view dsh-chime-alerts`；曾用名 `dsh-chime` 已确认被占用）
+- [x] npm 包名 `dsh-chime-alerts` 未被占用（已于 2026-08-25 发布 `0.5.6`，`latest` 指向它）
 - [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 静音按钮）
-- [ ] `npm publish`（package.json 已配 `publishConfig.access: public`）
-- [ ] 静态双端完成后再声明 `dsh.client`（见主 README「静态化路线图」——现在声明会让浏览器把函数体当经典脚本加载而报错）
+- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`）
+- [x] 静态双端完成后再声明 `dsh.client`（v0.5.0 起已声明并实测：经典脚本封套 + `exports["./client"]`）
 
 ## 已实证的静态 bundle 模板
 
@@ -39,7 +41,7 @@
   "repo": "https://github.com/nienieai/dsh-chime-alerts",
   "npm": "dsh-chime-alerts",
   "tags": ["notification", "sound", "audio", "提醒", "声音"],
-  "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh install dsh-chime-alerts（路线图）",
+  "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh plugin add dsh-chime-alerts（npm 已发布 v0.5.6）",
   "platforms": ["windows", "linux", "macos"],
   "license": "MIT"
 }

@@ -12,7 +12,7 @@
 - **并行/后台任务逐个响**：3 个并行子代理分别完成 = 3 声（节流按种类+来源独立）
 - **宿主蜂鸣跨平台**：Windows 播系统 wav（`wscript`+WMP）；Linux 播 freedesktop 主题音（`canberra-gtk-play` → 回退 `paplay`）；macOS 用 `afplay` 播系统音
 - **声音可替换**：每事件可换内置音或上传自定义音频（动态 ≤5MB / 静态 ≤3MB）
-- **中英双语界面**、**Node 可跑的自动化测试**（`npm test`，184 项断言）
+- **中英双语界面**、**Node 可跑的自动化测试**（`npm test`，221 项断言）
 
 ## 默认声音
 
@@ -28,16 +28,19 @@
 2. `cordis_run`（mode `run`）激活，客户端包首次激活需在页面上批准
 3. DSH 重启后按同样步骤重装；宿主音/自定义音频存本地磁盘，其余设置存浏览器，重装后自动恢复
 
-### 方式 B：静态安装（npm，v0.5.0 起双端完整、开箱即响）
+### 方式 B：静态安装（npm 包，v0.5.6 起与动态版功能对齐、开箱即响）
 
 ```
 dsh plugin --profile web add dsh-chime-alerts
 ```
 
+（或 `npm install dsh-chime-alerts` 后加入 profile 的 `dsh.profile.bundles`；npm 包地址 https://www.npmjs.com/package/dsh-chime-alerts ，GitHub Release 见 https://github.com/nienieai/dsh-chime-alerts/releases ）
+
 - 宿主半（事件记录 + 系统蜂鸣）经 `lib/index.js` 自动加载；客户端半（浏览器合成音 + 设置页 + 工作区静音）经 `exports["./client"]` 以经典脚本加载（`dsh.client.platform: "web"`）
 - 客户端直接订阅 DSH 会话/工作区快照检测事件，无需动态桥；设置存浏览器（键与动态版相同，**切换安装方式设置自动继承**）
-- **静态版差异**：「插件授权」无快照信号（仅宿主蜂鸣兜底）、「其他打断」并入「任务完成」、无宿主音配置 UI（宿主蜂鸣需手动编辑 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\dsh-chime-alerts-settings.json`）、自定义音频上限 3MB
-- 更新静态插件后需**重启 DSH** 生效
+- **静态版差异（v0.5.5 起宿主音配置 UI 已补齐）**：「插件授权」无快照信号（仅宿主蜂鸣兜底）、「其他打断」并入「任务完成」、自定义音频存浏览器且上限 3MB；其余（总开关 / 宿主蜂鸣开关 / 每事件宿主音下拉 / 宿主静音 / 宿主试听）与动态版一致
+- 设置页底部显示**版本号**（如「静态版 v0.5.6」），便于确认页面已加载最新代码
+- 更新静态插件后需**重启 DSH + 重开网页标签**生效
 
 ## 设置页
 
@@ -47,13 +50,13 @@ dsh plugin --profile web add dsh-chime-alerts
 - 十个事件单行（分组：主要通知 / 其他通知 / 需要人介入时）：名称 / 声音下拉（默认 + 内置音 + 音频库）/ 静音键 / 音量条 / 试听；宿主蜂鸣开启时每行追加第二行：宿主音下拉 + 宿主静音键 + 宿主试听
 - 固定监听所有会话，范围控制交给工作区静音按钮；底部显示本地存储位置
 
-存储位置：优先 `sandboxPolicy.workspaceRoot`；落在系统目录时（如 DSH 从 System32 启动）自动改用 DSH 数据目录 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`（Linux/macOS 对应 `$HOME/...`），旧数据自动迁移。
+存储位置：动态安装优先 `sandboxPolicy.workspaceRoot`，落在系统目录时（如 DSH 从 System32 启动）自动改用 DSH 数据目录；**静态安装固定存 DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\`（Linux/macOS 对应 `$HOME/...`，经 node:fs 直写，旧数据自动迁移）。
 
 ## 工作原理
 
-- 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权、目标受阻）、`tools/execute`（提问、计划评审）、`tools/result`（插件授权，v0.4.4+）、`jobs.onJobDone`（后台任务完成/失败），节流 3s（种类+来源）后入事件缓冲
-- 客户端每 700ms 拉取播放；15 秒以上旧事件跳过；boot 令牌防版本串扰；完成/打断类 800ms 防抖，主代理 `inbox.hasPending` 跳过
-- 浏览器音零音频文件；系统蜂鸣 Windows 走临时 `.vbs` + `wscript.exe` + WMP（避开安全软件拦截 PowerShell），Linux/macOS 见上
+- 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权、目标受阻）、`tools/execute`（提问、计划评审）、`tools/result`（插件授权，v0.4.4+）、`jobs.onJobDone`（后台任务完成/失败，静态安装延迟挂接，v0.5.4+），节流 3s（种类+来源）后入事件缓冲
+- 动态客户端每 700ms 拉取播放；15 秒以上旧事件跳过；boot 令牌防版本串扰；完成/打断类 800ms 防抖，主代理 `inbox.hasPending` 跳过。静态客户端直接订阅 `sessions`/`workspaces` 快照检测（running 边沿 / pendingInteraction / goal 投影 / jobsBySession 终态）
+- 浏览器音零音频文件；系统蜂鸣 Windows 走临时 `.vbs` + `wscript.exe` + WMP（避开安全软件拦截 PowerShell；静态安装经 node:fs 直写，v0.5.4+），Linux/macOS 见上
 
 ## 已知限制
 
@@ -81,7 +84,7 @@ docs/REGISTRIES.md   社区市场上架指南
 本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档），详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
-npm test      # 宿主 64 + 客户端 97 + 静态客户端 23 项断言（Node 即可，无需浏览器/DSH）
+npm test      # 宿主 85 + 客户端 97 + 静态客户端 39 项断言（Node 即可，无需浏览器/DSH）
 npm run check # 语法检查
 ```
 
