@@ -1,6 +1,6 @@
 {
   "name": "dsh-chime-alerts",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "DeepSeek Harness plugin: sound alerts for ten agent events — completion, subagent completion, background-job completion, approval, plugin approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + system beep, per-event toggles/sounds/volume, quick-mute button)",
   "license": "MIT",
   "author": {

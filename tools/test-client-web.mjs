@@ -99,6 +99,7 @@ function makeEnv(seedLocal, seedLib) {
   const env = {
     storage, oscs, audioPlays, notifications, slotRegs, react,
     apply: mod.apply,
+    inject: mod.inject,
     setSessions(next) { sessSnap = next; for (const fn of sessListeners) fn() },
     setWorkspaces(items) { wsSnap = { items }; for (const fn of wsListeners) fn() },
     push: () => {},
@@ -130,6 +131,16 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
 {
   const env = makeEnv()
   ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.id === 'chime'), '注册设置分区 chime')
+}
+
+// 1b. inject 必须声明 timer（apply 使用 ctx.interval/ctx.timeout，缺失即
+// 触发浏览器启动失败 "cannot get property \"timer\" without inject"）
+{
+  const env = makeEnv()
+  ok(Array.isArray(env.inject) && env.inject.indexOf('timer') >= 0, 'inject 声明 timer')
+  ok(Array.isArray(env.inject) && env.inject.indexOf('slots') >= 0, 'inject 声明 slots')
+  ok(Array.isArray(env.inject) && env.inject.indexOf('sessions') >= 0, 'inject 声明 sessions')
+  ok(Array.isArray(env.inject) && env.inject.indexOf('workspaces') >= 0, 'inject 声明 workspaces')
 }
 
 // 2. 主会话回合结束 → complete

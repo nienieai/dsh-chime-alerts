@@ -1,5 +1,11 @@
 # 更新日志
 
+## v0.5.2
+
+- **修复静态客户端启动失败（`cannot get property "timer" without inject`）**：`lib/client.web.js` 的插件只声明了 `inject: ['slots', 'sessions', 'workspaces']`,但 `apply()` 使用了 `ctx.interval`/`ctx.timeout`（mixin 访问器内部解析 `ctx['timer']`,未声明时宿主客户端 loader 会整体报错,网页端停止加载「Failed to load plugins / dsh-chime-alerts」）；补上 `inject: ['timer', ...]`,与动态版 `lib/client.js` 的声明一致
+- 测试 +4（断言静态客户端 `inject` 声明 timer/slots/sessions/workspaces——覆盖本回归,任何后续把 timer 从 inject 里删掉的改动都会测试失败）
+- 这也是之前「重启后仍失败、条目 id 每次变化」的真正原因：变的是**网页端** loader 条目 id（浏览器 boot 阶段为每个 client bundle 建随机 id 条目）,而非宿主补丁条目（`id: chime` 固定）
+
 ## v0.5.1
 
 - **修复静态宿主半加载失败**：`lib/index.js` 原用「默认导出函数」形式包装 host.js,Cordis loader 只识别顶层命名导出 `inject`/`apply`,导致 `inject: ['timer']` 不被读取,静态安装报 `cannot get property "timer" without inject`（截图「Failed to load plugins」）；改为标准 Cordis 插件导出（`export const inject: ['timer']` + `export function apply`）,静态安装恢复正常
