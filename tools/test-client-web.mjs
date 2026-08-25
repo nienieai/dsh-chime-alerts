@@ -55,8 +55,15 @@ function makeEnv(seedLocal, seedLib) {
 
   const react = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
-    useState: (v) => [typeof v === 'function' ? v() : v, () => {}],
-    useEffect: () => {},
+    // v0.5.6：useState 记录每次 setter 入参（回归检测函数式更新），useEffect 同步执行
+    // effect 回调（useVersion 借此把监听器挂进 storeListeners）
+    useState: (v) => {
+      const pair = [typeof v === 'function' ? v() : v]
+      pair[1] = (u) => { react.useStateCalls.push(u) }
+      return pair
+    },
+    useStateCalls: [],
+    useEffect: (fn) => { if (typeof fn === 'function') { try { fn() } catch (err) {} } return () => {} },
     useRef: (v) => ({ current: v }),
   }
 
@@ -326,8 +333,25 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
   const before3 = calls.length
   hostPreviews[2].props.onClick()
   ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
-  ok(byText(page, '静态版 v0.5.5') !== undefined, '设置页底部标注版本 v0.5.5')
+  ok(byText(page, '静态版 v0.5.6') !== undefined, '设置页底部标注版本 v0.5.6')
   globalThis.fetch = origFetch
+}
+
+// 9d. v0.5.6：useVersion 必须函数式更新（setState(x => x + 1)）。闭包捕获初值
+// （pair[1](pair[0] + 1) 恒传 1）会让 React 第一次重渲染后吞掉后续所有 bump——
+// 「切换宿主蜂鸣开关后卡住、开关不再响应」的根因回归测试
+{
+  const env = makeEnv()
+  const before = env.react.useStateCalls.length
+  const root = env.slotRegs.find((r) => r.options.name === 'settings.section').component()
+  const page = render(root)
+  const masterSwitch = page.find((n) => n.type === 'button' && n.props.role === 'switch')
+  ok(masterSwitch !== undefined && typeof masterSwitch.props.onClick === 'function', '总开关存在且可点击')
+  masterSwitch.props.onClick()
+  const after = env.react.useStateCalls.length
+  ok(after > before, 'bump 触发 setState')
+  const last = env.react.useStateCalls[after - 1]
+  ok(typeof last === 'function' && last(41) === 42, 'setState 使用函数式更新（x => x + 1），连续 bump 不会被吞掉')
 }
 
 // 10. 网页通知触发
