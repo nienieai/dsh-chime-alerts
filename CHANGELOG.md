@@ -1,5 +1,15 @@
 # 更新日志
 
+## v0.5.3
+
+- **静态安装恢复宿主蜂鸣（修复「没宿主响铃了」）**：静态环境没有客户端-宿主 RPC 桥（harness 为 undefined）,此前 `sysget`/`sysset` 无人调用 → 磁盘上保存的 `hostBeep` 永远不生效、`alwaysBeep` 恒为 false。v0.5.3 补齐：
+  - **启动自动读盘**：宿主半 apply 时直接读取 `settings.json` 恢复 `hostBeep`/`hostSounds`/`hostMuted`（磁盘设置成为真源）
+  - **静态存储直通车（nodeIo）**：静态宿主半经 `lib/index.js` 注入的 `node:fs` 直通车读写 `%DSH_HOME%\plugins\dsh-chime-alerts`——会话沙箱只允许写工作区根，绕过它对用户数据目录的写入限制（与 dsh-liquid-glass-balance-card 写 `$DSH_HOME\storages` 同形态）；动态模式仍走会话沙箱 fs，互不干扰
+  - **webServer HTTP 端点**：在 DSH webServer 上注册 `/dsh-chime-alerts/sysget`（GET）与 `/dsh-chime-alerts/sysset`（POST）,静态设置页直接读写宿主设置；注册采用服务延迟监听（`internal/service`）,解决 webServer 在 chime 条目之后挂载的时序问题;仅无 harness 时注册,动态桥共存不受影响
+  - **惰性解析 fs/subprocess**：真实 web 树的激活顺序里 fs/subprocess 晚于 chime 条目,apply 时的 `ctx.get` 拿不到 → 改为用时解析,宿主蜂鸣能力检测与设置读写不再依赖挂载时序
+- **静态设置页加回「宿主蜂鸣」开关**：之前静态版刻意隐藏了宿主蜂鸣 UI（因无通道不生效）,现在有 HTTP 端点后恢复——点击即写宿主设置并持久化(`%USERPROFILE%\.dsh\plugins\dsh-chime-alerts\dsh-chime-alerts-settings.json`),启动时从 `/sysget` 回读开关状态
+- 测试 +14（host：无 harness 注册端点/路径正确/sysget 200/自动读盘恢复 hostBeep/nodeIo 存储根 DSH 目录/sysset 200/sysset ok/HTTP 写盘/写后读回一致性；client-web：宿主蜂鸣开关存在/启动读 /sysget/开关可点击/切换写 /sysset）,宿主 74 项、客户端 97 项、静态客户端 27 项、合计 198 项
+
 ## v0.5.2
 
 - **修复静态客户端启动失败（`cannot get property "timer" without inject`）**：`lib/client.web.js` 的插件只声明了 `inject: ['slots', 'sessions', 'workspaces']`,但 `apply()` 使用了 `ctx.interval`/`ctx.timeout`（mixin 访问器内部解析 `ctx['timer']`,未声明时宿主客户端 loader 会整体报错,网页端停止加载「Failed to load plugins / dsh-chime-alerts」）；补上 `inject: ['timer', ...]`,与动态版 `lib/client.js` 的声明一致

@@ -222,7 +222,7 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
   ok(env.oscs.length === n, '3s 节流生效（同来源不重复）')
 }
 
-// 9. 设置页渲染 10 张事件卡片 + 三个开关（静态版无宿主蜂鸣开关）
+// 9. 设置页渲染 10 张事件卡片 + 四个开关（静态版含宿主蜂鸣开关）
 {
   const env = makeEnv()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
@@ -230,8 +230,68 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
   ok(byText(page, '启用声音提醒') !== undefined, '总开关存在')
   ok(byText(page, '网页响铃') !== undefined, '网页响铃开关存在')
   ok(byText(page, '网页通知') !== undefined, '网页通知开关存在')
-  ok(!page.some((n) => n.type === 'span' && n.children !== undefined && n.children.some((c) => String(c).indexOf('宿主蜂鸣') === 0)), '静态版不显示宿主蜂鸣开关')
+  ok(byText(page, '宿主蜂鸣') !== undefined, '宿主蜂鸣开关存在')
   ok(byText(page, '插件授权') !== undefined, '渲染「插件授权」事件行')
+}
+
+// 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
+{
+  const calls = []
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (url, opts) => {
+    const u = String(url)
+    calls.push({ url: u, opts: opts || {} })
+    if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: false, capBeep: true }) })
+    if (u.indexOf('/sysset') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })
+    return Promise.reject(new Error('unexpected fetch ' + u))
+  }
+  const env = makeEnv()
+  ok(calls.some((c) => c.url.indexOf('/sysget') >= 0), '启动时读取宿主设置（/sysget）')
+  // 在未拍平的组件树上找到「宿主蜂鸣」snd-master 行,取该行内的 switch 按钮
+  const root = env.slotRegs.find((r) => r.options.name === 'settings.section').component()
+  let hostSwitchOnClick = null
+  const nameOf = (x) => { // 取一个节点里可能的内嵌 label 文本
+    if (x === null || x === undefined) return ''
+    if (typeof x === 'string') return x
+    if (Array.isArray(x)) return x.map((c) => nameOf(c)).join('')
+    if (typeof x.type === 'function') return nameOf(x.type(x.props))
+    if (x.type === 'span' && x.props && x.props.className === 'snd-name') {
+      const sk = x.props.children !== undefined ? x.props.children : x.children
+      return nameOf(sk)
+    }
+    const k = x.props && x.props.children !== undefined ? x.props.children : x.children
+    return nameOf(k)
+  }
+  const innerSwitch = (x) => {
+    if (x === null || x === undefined || hostSwitchOnClick !== null) return
+    if (Array.isArray(x)) { x.forEach(innerSwitch); return }
+    if (typeof x === 'string' || typeof x === 'number') return
+    if (typeof x.type === 'function') { innerSwitch(x.type(x.props)); return }
+    if (typeof x.type === 'string' && x.props && x.props.role === 'switch' && typeof x.props.onClick === 'function') { hostSwitchOnClick = x.props.onClick; return }
+    const k = x.props && x.props.children !== undefined ? x.props.children : x.children
+    innerSwitch(k)
+  }
+  const walk = (n) => {
+    if (n === null || n === undefined || hostSwitchOnClick !== null) return
+    if (Array.isArray(n)) { n.forEach(walk); return }
+    if (typeof n === 'string' || typeof n === 'number') return
+    if (typeof n.type === 'function') { walk(n.type(n.props)); return }
+    if (n.type === 'div' && n.props && n.props.className === 'snd-master') {
+      const k = n.props.children !== undefined ? n.props.children : n.children
+      if (nameOf(k).indexOf('宿主蜂鸣') >= 0 || nameOf(k).indexOf('Host beep') >= 0) {
+        innerSwitch(k)
+        return
+      }
+    }
+    const k = n.props && n.props.children !== undefined ? n.props.children : n.children
+    walk(k)
+  }
+  walk(root)
+  ok(hostSwitchOnClick !== null, '宿主蜂鸣开关可点击')
+  const before = calls.length
+  hostSwitchOnClick()
+  ok(calls.length > before && calls.slice(before).some((c) => c.url.indexOf('/sysset') >= 0), '切换后写宿主设置（/sysset）')
+  globalThis.fetch = origFetch
 }
 
 // 10. 网页通知触发

@@ -16,6 +16,7 @@ function makeEnv(opts = {}) {
   const spawns = []
   const jobDoneFns = []
   const fsFiles = new Map()
+  for (const p of opts.preseed ?? []) fsFiles.set(p.key, p.value)
   const fsMock = {
     resolve: async (path, opts2) => ({ key: 't:' + (opts2 && opts2.cwd ? opts2.cwd + '/' : '') + path }),
     processPath: (t) => t.key.slice(2),
@@ -63,14 +64,33 @@ function makeEnv(opts = {}) {
         isOwnedBy: (child, owner) => child === 'sub1' && owner !== undefined && owner !== null && owner.id === 'root',
       }
       if (name === 'jobs') return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
+      if (name === 'dshHomePath') return (...parts) => ['C:/Users/ns/.dsh', ...parts].join('/')
+      if (name === 'webServer') {
+        if (!opts.webServerRegister) return undefined
+        return { register: opts.webServerRegister }
+      }
       return undefined
     },
     on(event, fn) { (listeners[event] ??= []).push(fn) },
     timeout(fn) { fn(); return () => {} },
     interval() {},
+    effect(fn) { const d = fn && fn(); return typeof d === 'function' ? d : () => {} },
   }
-  const harness = Object.assign({ handle: (method, fn) => { handlers[method] = fn } }, opts.harnessExtra || {})
-  const plugin = new Function('ctx', 'harness', source)(ctx, harness)
+  const harness = opts.noHarness
+    ? undefined
+    : Object.assign({ handle: (method, fn) => { handlers[method] = fn } }, opts.harnessExtra || {})
+  // 静态模式（noHarness）模拟 lib/index.js 注入的 nodeIo 直通车
+  const nodeIo = opts.noHarness
+    ? {
+        isStatic: true,
+        readText: (abs) => { const v = fsFiles.get('n:' + abs); if (v === undefined) throw new Error('ENOENT'); return v },
+        writeText: (abs, content) => { fsFiles.set('n:' + abs, content); return { version: 1 } },
+        exists: (abs) => fsFiles.has('n:' + abs),
+        join: (...parts) => parts.join('/').replace(/\/+/g, '/'),
+        dirname: (p) => p.replace(/[\\/][^\\/]+$/, ''),
+      }
+    : undefined
+  const plugin = new Function('ctx', 'harness', '__nodeIo', source)(ctx, harness, nodeIo)
   plugin.apply(ctx)
   const emit = (event, ...args) => { for (const fn of listeners[event] ?? []) fn(...args) }
   const pull = () => handlers.pull({ sessionId: null, after: 0 })
@@ -410,6 +430,62 @@ function agent(id, origin, reasonKind, hasPending = false) {
   env.emit('agent/status', { agent: agent('root2', 'main', 'completed'), status: 'idle' })
   await new Promise((r) => setTimeout(r, 30))
   ok(env.spawns.length > before, '取消静音后宿主音恢复')
+}
+
+// 21. v0.5.3：静态宿主半——无 harness 时启动自动读盘 + webServer HTTP 端点（nodeIo 直通车）
+{
+  // 预设磁盘设置 hostBeep=true（模拟用户上次保存；nodeIo 键以 n: 前缀 + 绝对路径）
+  const preseed = [
+    { key: 'n:C:/Users/ns/.dsh/plugins/dsh-chime-alerts/dsh-chime-alerts-settings.json', value: JSON.stringify({ hostBeep: true, hostSounds: { complete: 'Windows Notify System Generic.wav' }, hostMuted: { jobfail: true } }) },
+  ]
+  const routes = []
+  const env = makeEnv({
+    noHarness: true,
+    preseed,
+    webServerRegister: (route) => { routes.push(route); return () => {} },
+  })
+  await new Promise((r) => setTimeout(r, 30))
+  ok(routes.length === 2, '无 harness 时注册 sysget/sysset HTTP 端点')
+  const sysgetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysget')
+  const syssetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysset')
+  ok(sysgetRoute !== undefined && syssetRoute !== undefined, '端点路径正确（/dsh-chime-alerts/sysget|sysset）')
+  if (sysgetRoute !== undefined) {
+    let status = 0
+    let body = ''
+    const res = {
+      writeHead: (s) => { status = s },
+      end: (b) => { body = String(b || '') },
+    }
+    await sysgetRoute.handler({ method: 'GET' }, res)
+    ok(status === 200, 'sysget HTTP 200')
+    const parsed = JSON.parse(body)
+    ok(parsed.hostBeep === true, '启动自动读盘恢复 hostBeep=true（nodeIo 直读 DSH 目录）')
+    ok(parsed.dir === 'C:/Users/ns/.dsh/plugins/dsh-chime-alerts', '存储根 = DSH 数据目录（dshHomePath(plugins, dsh-chime-alerts)）')
+  }
+  if (syssetRoute !== undefined) {
+    let status = 0
+    let body = ''
+    const res = {
+      writeHead: (s) => { status = s },
+      end: (b) => { body = String(b || '') },
+    }
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ hostBeep: false })) },
+    }
+    await syssetRoute.handler(req, res)
+    ok(status === 200, 'sysset HTTP 200')
+    const parsed = JSON.parse(body)
+    ok(parsed.ok === true, 'sysset 返回 ok')
+    const stored = JSON.parse(env.fsFiles.get('n:C:/Users/ns/.dsh/plugins/dsh-chime-alerts/dsh-chime-alerts-settings.json'))
+    ok(stored.hostBeep === false, 'HTTP 写盘 hostBeep=false（nodeIo）')
+    // 再读一次端点确认内存与磁盘一致
+    let status2 = 0
+    let body2 = ''
+    const res2 = { writeHead: (s) => { status2 = s }, end: (b) => { body2 = String(b || '') } }
+    await sysgetRoute.handler({ method: 'GET' }, res2)
+    ok(JSON.parse(body2).hostBeep === false, 'HTTP 写后 sysget 读回 false')
+  }
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
