@@ -28,6 +28,7 @@ function makeEnv(opts = {}) {
     { id: 'root', status: 'idle' },
     { id: 'sub1', status: 'idle' },
   ]
+  let jobsAvailable = !opts.deferredJobs
   const ctx = {
     get(name) {
       if (name === 'subprocess') {
@@ -63,7 +64,10 @@ function makeEnv(opts = {}) {
         roots: () => [{ id: 'root' }],
         isOwnedBy: (child, owner) => child === 'sub1' && owner !== undefined && owner !== null && owner.id === 'root',
       }
-      if (name === 'jobs') return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
+      if (name === 'jobs') {
+        if (!jobsAvailable) return undefined
+        return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
+      }
       if (name === 'dshHomePath') return (...parts) => ['C:/Users/ns/.dsh', ...parts].join('/')
       if (name === 'webServer') {
         if (!opts.webServerRegister) return undefined
@@ -93,8 +97,13 @@ function makeEnv(opts = {}) {
   const plugin = new Function('ctx', 'harness', '__nodeIo', source)(ctx, harness, nodeIo)
   plugin.apply(ctx)
   const emit = (event, ...args) => { for (const fn of listeners[event] ?? []) fn(...args) }
+  // v0.5.4：模拟 internal/service 事件（jobs 服务晚挂载）
+  const emitService = (name) => {
+    if (name === 'jobs') jobsAvailable = true
+    for (const fn of listeners['internal/service'] ?? []) fn(name)
+  }
   const pull = () => handlers.pull({ sessionId: null, after: 0 })
-  return { handlers, spawns, jobDoneFns, emit, pull, fsFiles, fsMock }
+  return { handlers, spawns, jobDoneFns, emit, emitService, pull, fsFiles, fsMock }
 }
 
 function agent(id, origin, reasonKind, hasPending = false) {
@@ -486,6 +495,31 @@ function agent(id, origin, reasonKind, hasPending = false) {
     await sysgetRoute.handler({ method: 'GET' }, res2)
     ok(JSON.parse(body2).hostBeep === false, 'HTTP 写后 sysget 读回 false')
   }
+}
+
+// 21b. v0.5.4：静态宿主半的蜂鸣 vbs 走 nodeIo 直通车（不依赖沙箱 fs 的 danger-full-access 重试）
+{
+  const preseed = [
+    { key: 'n:C:/Users/ns/.dsh/plugins/dsh-chime-alerts/dsh-chime-alerts-settings.json', value: JSON.stringify({ hostBeep: true }) },
+  ]
+  const env = makeEnv({ noHarness: true, preseed, webServerRegister: () => () => {} })
+  await new Promise((r) => setTimeout(r, 30))
+  env.emit('session/event', { id: 'root' }, { type: 'approval/asked', data: {} })
+  await new Promise((r) => setTimeout(r, 30))
+  const sp = env.spawns.find((s) => Array.isArray(s.argv) && typeof s.argv[0] === 'string' && s.argv[0].indexOf('wscript') >= 0)
+  ok(sp !== undefined, '静态宿主蜂鸣 spawn wscript')
+  const vbs = sp !== undefined ? env.fsFiles.get('n:' + sp.argv[1]) : undefined
+  ok(vbs !== undefined && vbs.indexOf('WMPlayer.OCX') >= 0 && vbs.indexOf('Windows User Account Control.wav') >= 0, 'vbs 经 nodeIo 直写 DSH 目录（approval 默认 UAC）')
+}
+
+// 21c. v0.5.4：jobs 服务晚于本条目挂载时经 internal/service 延迟挂接
+{
+  const env = makeEnv({ deferredJobs: true })
+  ok(env.jobDoneFns.length === 0, 'jobs 未就绪时暂不挂接')
+  env.emitService('jobs')
+  ok(env.jobDoneFns.length === 1, 'jobs 服务出现后延迟挂接 onJobDone')
+  for (const fn of env.jobDoneFns) fn({ id: 'bash-77', kind: 'bash', status: 'completed', ownerSession: 'root' }, { id: 'root' })
+  ok(env.pull().events.some((e) => e.kind === 'jobdone'), '延迟挂接后 jobdone 正常记录')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

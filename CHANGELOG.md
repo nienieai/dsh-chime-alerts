@@ -1,5 +1,12 @@
 # 更新日志
 
+## v0.5.4
+
+- **蜂鸣 vbs 走 nodeIo 直通车（静态安装「开关开了也没宿主音」的最后一块）**：`writeBeepVbs` 此前仍经沙箱 fs 写 vbs 到 `%DSH_HOME%\plugins\dsh-chime-alerts`——工作区外写入要先吃一次 `FS_SANDBOX_DENIED` 再靠 `danger-full-access` 重试成功，链路脆弱；现在静态宿主半与设置文件同通道（`node:fs` 直通车），一步到位，宿主蜂鸣路径不再依赖沙箱 fs
+- **jobs 服务延迟挂接**：真实 web 树中 jobs 服务可能晚于 chime 条目挂载，apply 期 `ctx.get('jobs')` 取不到 → `onJobDone` 永久失联，静态安装的 jobdone/jobfail 宿主蜂鸣不响；改为缺位时经 `internal/service` 延迟挂接（与 webServer 端点同形态，挂上即撤监听）
+- **客户端 HTTP 8s 超时兜底**：`hostFetch` 加 AbortController 超时——端点异常挂起时设置页绝不滞留僵尸请求
+- 测试 +5（host：静态 vbs 经 nodeIo 直写 DSH 目录 / spawn wscript / jobs 未就绪暂不挂接 / 服务出现后延迟挂接 / 挂接后 jobdone 正常记录），宿主 79 项、客户端 97 项、静态客户端 29 项、合计 205 项
+
 ## v0.5.3
 
 - **静态安装恢复宿主蜂鸣（修复「没宿主响铃了」）**：静态环境没有客户端-宿主 RPC 桥（harness 为 undefined）,此前 `sysget`/`sysset` 无人调用 → 磁盘上保存的 `hostBeep` 永远不生效、`alwaysBeep` 恒为 false。v0.5.3 补齐：
