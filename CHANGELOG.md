@@ -1,5 +1,10 @@
 # 更新日志
 
+## v0.5.7
+
+- **文档重构**：安装指南改为「静态安装（npm，推荐）→ 动态插件（免安装）」排序；补充 CLI 偶发漏注册 bundle 层时的两处手动检查（`dependencies` + `dsh.profile.bundles`）；删除「前身 dsh-chime / dsh-sound-alerts」历史行；版本号全链路对齐（package.json / 设置页版本标注 / 测试断言）
+- 发布到 npm：`dsh-chime-alerts@0.5.7`（latest），npm 页面 README 与仓库同步
+
 ## v0.5.6
 
 - **修复设置页「切换宿主蜂鸣开关后卡住、开关不再响应」（卡顿根因）**：静态客户端 `useVersion` 的订阅回调写成 `pair[1](pair[0] + 1)`——闭包捕获初值 0，永远 `setState(1)`，React 第一次重渲染后把所有后续 bump 全部吞掉。表现：页面第一次交互后 UI 不再更新——开关点不动（实际已写盘，宿主会响，但界面不反映）、选音量/静音等控件看起来失效。改为函数式更新 `setState(x => x + 1)`（与动态版一致的写法）

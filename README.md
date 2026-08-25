@@ -2,8 +2,6 @@
 
 给 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 加一组轻量声音提醒：Agent 干完活、需要你批准、提交计划等你评审、有问题问你、目标受阻、后台任务完成/挂了，电脑响一声——不用一直盯着页面。
 
-> 前身 `dsh-chime` / `dsh-sound-alerts`。v0.3.5 因市场名称冲突更名；存储键自动迁移，设置不丢。
-
 ## 特性
 
 - **十类事件**，每类独立开关 / 声音 / 音量：任务完成、子任务完成、后台任务完成、需要授权、插件授权、Agent 提问、计划评审、目标受阻、其他打断、后台任务失败
@@ -22,25 +20,33 @@
 
 ## 安装
 
-### 方式 A：动态插件（功能完整，推荐）
+### 方式 A：静态安装（npm 包，推荐，功能与动态版一致、开箱即响）
+
+一键安装（CLI 会写入 profile 依赖并注册 bundle 层）：
+
+```sh
+dsh plugin --profile web add dsh-chime-alerts
+```
+
+> npm 包地址：https://www.npmjs.com/package/dsh-chime-alerts ；GitHub Release：https://github.com/nienieai/dsh-chime-alerts/releases
+
+安装/升级后需**重启 DSH + 重开网页标签**生效。若插件装了但不加载（CLI 偶发只写依赖、漏注册 bundle 层），手动确认 profile 的 `package.json` 两处齐备：
+
+1. `dependencies`（或 devDependencies）里有 `dsh-chime-alerts`——npm 包名，或本地调试用 `link:`/`file:` 指向插件目录
+2. `dsh.profile.bundles` 数组里有 `"dsh-chime-alerts"`
+
+然后在 profile 目录执行 `pnpm install`，再重启 DSH + 重开网页标签。
+
+- 宿主半（事件记录 + 系统蜂鸣）经 `lib/index.js` 自动加载；客户端半（浏览器合成音 + 设置页 + 工作区静音）经 `exports["./client"]` 以经典脚本加载（`dsh.client.platform: "web"`）
+- 客户端直接订阅 DSH 会话/工作区快照检测事件，无需动态桥；设置存浏览器（键与动态版相同，**切换安装方式设置自动继承**）
+- **静态版差异**：「插件授权」无快照信号（仅宿主蜂鸣兜底）、「其他打断」并入「任务完成」、自定义音频存浏览器且上限 3MB；其余（总开关 / 宿主蜂鸣开关 / 每事件宿主音下拉 / 宿主静音 / 宿主试听）与动态版一致
+- 设置页底部显示**版本号**（如「静态版 v0.5.7」），便于确认页面已加载最新代码
+
+### 方式 B：动态插件（免安装，重启 DSH 后需重新部署）
 
 1. `cordis_define`：`code.host` 粘贴 [`lib/host.js`](lib/host.js) 全文，`code.client` 粘贴 [`lib/client.js`](lib/client.js) 全文（`kind: "new"`，idPrefix 自取）
 2. `cordis_run`（mode `run`）激活，客户端包首次激活需在页面上批准
 3. DSH 重启后按同样步骤重装；宿主音/自定义音频存本地磁盘，其余设置存浏览器，重装后自动恢复
-
-### 方式 B：静态安装（npm 包，v0.5.6 起与动态版功能对齐、开箱即响）
-
-```
-dsh plugin --profile web add dsh-chime-alerts
-```
-
-（或 `npm install dsh-chime-alerts` 后加入 profile 的 `dsh.profile.bundles`；npm 包地址 https://www.npmjs.com/package/dsh-chime-alerts ，GitHub Release 见 https://github.com/nienieai/dsh-chime-alerts/releases ）
-
-- 宿主半（事件记录 + 系统蜂鸣）经 `lib/index.js` 自动加载；客户端半（浏览器合成音 + 设置页 + 工作区静音）经 `exports["./client"]` 以经典脚本加载（`dsh.client.platform: "web"`）
-- 客户端直接订阅 DSH 会话/工作区快照检测事件，无需动态桥；设置存浏览器（键与动态版相同，**切换安装方式设置自动继承**）
-- **静态版差异（v0.5.5 起宿主音配置 UI 已补齐）**：「插件授权」无快照信号（仅宿主蜂鸣兜底）、「其他打断」并入「任务完成」、自定义音频存浏览器且上限 3MB；其余（总开关 / 宿主蜂鸣开关 / 每事件宿主音下拉 / 宿主静音 / 宿主试听）与动态版一致
-- 设置页底部显示**版本号**（如「静态版 v0.5.6」），便于确认页面已加载最新代码
-- 更新静态插件后需**重启 DSH + 重开网页标签**生效
 
 ## 设置页
 

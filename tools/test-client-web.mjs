@@ -333,7 +333,7 @@ const byText = (nodes, text) => nodes.find((n) => n.children !== undefined && n.
   const before3 = calls.length
   hostPreviews[2].props.onClick()
   ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
-  ok(byText(page, '静态版 v0.5.6') !== undefined, '设置页底部标注版本 v0.5.6')
+  ok(byText(page, '静态版 v0.5.7') !== undefined, '设置页底部标注版本 v0.5.7')
   globalThis.fetch = origFetch
 }
 
