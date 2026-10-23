@@ -496,7 +496,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 // 10. 样式注入
 {
   const env = makeEnv()
-  ok(env.styles.inserted.length === 1 && env.styles.inserted[0].indexOf('.snd-ws-mute') >= 0, '样式注入（含工作区静音按钮样式）')
+  ok(env.styles.inserted.length === 1 && env.styles.inserted[0].indexOf('.snd-ws-mark') >= 0, '样式注入（含工作区静音标记样式）')
 }
 
 // 11. 中英双语：英文环境渲染英文文案（无 navigator 环境默认中文）

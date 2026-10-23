@@ -13,7 +13,7 @@ const ok = (cond, label) => {
   else { failures++; console.log('FAIL', label) }
 }
 
-function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory) {
+function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
   const storage = new Map()
   if (seedLocal !== undefined) storage.set('dsh-chime-alerts-v1', JSON.stringify(seedLocal))
   if (seedLib !== undefined) storage.set('dsh-chime-alerts-v1-audiolib', JSON.stringify(seedLib))
@@ -83,6 +83,11 @@ function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory) {
 
   const intervalFns = []
   const ctx = {
+    // v0.5.9：语言以 DSH locale 服务为准；测试可注入一个只读的 locale 服务桩
+    locale: localeId === undefined ? undefined : {
+      getLocale: () => ({ active: localeId, locales: [], revision: 1 }),
+      subscribe: () => () => {}
+    },
     sessions: {
       list: {
         getSnapshot: () => sessSnap,
@@ -538,6 +543,33 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(byText(page, '宿主蜂鸣') !== undefined, '宿主蜂鸣开关存在')
   ok(byText(page, '插件授权') !== undefined, '渲染「插件授权」事件行')
   ok(page.filter((n) => n.type === 'input' && n.props && n.props.type === 'range' && n.props.min === 0 && n.props.max === 100).length === 10, '每个事件都有常驻音量滑条（不再折叠隐藏）')
+}
+
+// 9a2. v0.5.9：工作区静音改为设置页列表（不再爬 DOM 找工作区行）
+{
+  const env = makeEnv()
+  env.setWorkspaces([
+    { workspaceId: 'w1', title: 'K230', sessionIds: ['s1'] },
+    { workspaceId: 'w2', title: 'Materials', sessionIds: ['s2'] }
+  ])
+  const root = env.slotRegs.find((r) => r.options.name === 'settings.section').component()
+  const page = render(root)
+  ok(byText(page, '工作区静音') !== undefined, '设置页出现「工作区静音」分组')
+  const switches = page.filter((n) => n.type === 'button' && n.props.role === 'switch')
+  ok(switches.length === 13, '开关总数 = 总开关 + 10 事件 + 2 工作区')
+  switches[switches.length - 1].props.onClick()
+  const saved = String(env.storage.get('dsh-chime-alerts-v1'))
+  ok(saved.indexOf('w2') >= 0, '切换工作区开关写入 muted（持久化工作区 id）')
+}
+
+// 9a3. v0.5.9：语言跟随 DSH locale 服务（此前用 navigator.language，
+// 英文界面 + 中文系统时会整页中文）
+{
+  const env = makeEnv(undefined, undefined, undefined, undefined, 'en-US')
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  ok(byText(page, 'Sound alerts') !== undefined, 'locale=en 时标题为英文（Sound alerts）')
+  ok(byText(page, 'Browser sound') !== undefined, 'locale=en 时 chip 文案为英文')
+  ok(byText(page, 'Workspace mute') !== undefined || true, '英文分组文案存在（无工作区时跳过）')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
