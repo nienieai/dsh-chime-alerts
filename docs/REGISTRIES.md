@@ -4,7 +4,7 @@
 官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
 （Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
 
-> **状态（2026-08-25）**：npm 已发布 `dsh-chime-alerts@0.5.7`（`latest`），GitHub Release v0.5.6 为 Latest；静态安装与动态版功能对齐（含宿主蜂鸣开关 / 每事件宿主音配置 / 宿主试听）。
+> **状态（2026-10-23）**：GitHub 已发布 `v0.5.8`（tag + Release）。npm 的 `latest` 仍是 `dsh-chime-alerts@0.5.7`，`0.5.8` 由维护者在本地终端执行 `npm publish` 上传（账号启用了 2FA，无人值守环境过不了 EOTP）。本版适配 DSH 0.1.5 / 0.1.7 / 0.2.0 三代契约：九类提醒改由宿主 `/dsh-chime-alerts/events` 下发、后台任务改用 `jobs.events` + `removed` 判别前后台、失败按退出码判定、音频走共享主总线防削波、`AudioContext` 解锁排队补响、宿主通道退避重试与 `boot` 令牌守卫。
 
 ## 发布前检查
 
