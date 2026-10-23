@@ -17,6 +17,8 @@ function makeEnv(opts = {}) {
   const jobDoneFns = []
   // v0.5.8：DSH 0.2.0 的 jobs 服务没有 onJobDone，只有 subscribe(filter, listener)
   const jobSubs = []
+  // immediateTimers: false 时挂起的 timeout 队列（见 ctx.timeout 实现）
+  const timers = []
   const fsFiles = new Map()
   for (const p of opts.preseed ?? []) fsFiles.set(p.key, p.value)
   const fsMock = {
@@ -92,7 +94,18 @@ function makeEnv(opts = {}) {
       return undefined
     },
     on(event, fn) { (listeners[event] ??= []).push(fn) },
-    timeout(fn) { fn(); return () => {} },
+    // 默认立即执行（agent/status 的 800ms 防抖用例依赖同步语义）；
+    // immediateTimers: false 时改为挂起，由 runTimers() 手动推进——
+    // 给「作业结算后延迟确认是否被 remove」这条路径用。
+    timeout(fn, ms) {
+      if (opts.immediateTimers === false) {
+        const t = { fn, ms, cancelled: false }
+        timers.push(t)
+        return () => { t.cancelled = true }
+      }
+      fn()
+      return () => {}
+    },
     interval() {},
     effect(fn) { const d = fn && fn(); return typeof d === 'function' ? d : () => {} },
   }
@@ -125,7 +138,12 @@ function makeEnv(opts = {}) {
     for (const fn of listeners['internal/service'] ?? []) fn(name)
   }
   const pull = () => handlers.pull({ sessionId: null, after: 0 })
-  return { handlers, spawns, jobDoneFns, jobSubs, emit, emitService, pull, fsFiles, fsMock }
+  // 推进挂起的 timeout（immediateTimers: false 时才有内容）
+  const runTimers = () => {
+    const batch = timers.splice(0, timers.length)
+    for (const t of batch) if (!t.cancelled) t.fn()
+  }
+  return { handlers, spawns, jobDoneFns, jobSubs, emit, emitService, pull, runTimers, fsFiles, fsMock }
 }
 
 // 假 Session：只带当前 DSH **真实存在**的成员。
@@ -795,37 +813,45 @@ function sessionEventThreeArg(env, session, event) {
 // 21f. v0.5.8 实测回归（desktop 内嵌 dsh）：注册表**没有** subscribe，事件流挂在
 // `jobs.events` 属性上（JobEvents.subscribe）。只认 jobs.subscribe 会判否、永不挂接，
 // 表现就是「后台任务完成/失败」在任何界面上都不响——本轮真机测试踩到的就是这个。
+// 第二轮真机结论：`awaited` 不足以区分前后台（run_in_background 结算时也是 true），
+// 可用的行为判据是 `removed`——前台调用结算后立刻 remove，后台作业留在列表里。
 {
   const routes4 = []
   const env = makeEnv({
     noHarness: true,
     jobsShape: 'events',
     deferredJobs: true,
+    immediateTimers: false,
     webServerRegister: (route) => { routes4.push(route); return () => {} },
   })
   await new Promise((r) => setTimeout(r, 30))
   env.emitService('jobs')
   ok(env.jobSubs.length === 1, '事件流挂在 jobs.events 上时也能挂接（0.2.0 实测契约）')
   const fire4 = env.jobSubs.length === 1 ? env.jobSubs[0].fn : () => {}
-  // awaited=false：真正的后台作业结束 → 必须提醒
+  // 1) 无人等待的结算（awaited=false）：立刻提醒
   fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
-  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: false })
-  // awaited=true：前台 bash/pwsh 工具调用，等待方已拿到结果 → 不是「后台作业完成」，不得提醒
+  // 2) 前台调用：结算后立刻被 remove → 待发提醒必须撤销
   fire4({ type: 'settled', job: { id: 'bash-24', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: true })
-  fire4({ type: 'settled', job: { id: 'bash-25', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
-  // killed 不提醒；同一 id 重复结算只认一次
+  fire4({ type: 'removed', job: { id: 'bash-24', kind: 'bash', status: 'completed', owner: 'root' } })
+  // 3) 真后台作业：awaited=true 但不会被立刻移除 → 短延迟后必须提醒
+  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
+  // 4) killed 不提醒；同一 id 重复结算只认一次
   fire4({ type: 'settled', job: { id: 'bash-23', kind: 'bash', status: 'killed', owner: 'root' }, cause: 'kill', awaited: false })
   fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
+  ok(env.jobSubs.length === 1, '前台调用未产生提醒（待发项已挂起，等确认）')
+  env.runTimers()
   const route4 = routes4.find((rt) => rt.path === '/dsh-chime-alerts/events')
   ok(route4 !== undefined, 'jobs.events 形态：/events 端点已注册')
   let status4 = 0
   let body4 = ''
   const res4 = { writeHead: (s) => { status4 = s }, end: (b) => { body4 = String(b || '') } }
   await route4.handler({ method: 'GET', url: '/dsh-chime-alerts/events?after=0' }, res4)
-  const kinds4 = JSON.parse(body4).events.map((e) => e.kind)
-  ok(status4 === 200 && kinds4.filter((k) => k === 'jobdone').length === 1, 'jobs.events → jobdone 一次（awaited 与重复结算均不计）')
-  ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 一次（awaited=true 的前台调用不计）')
-  ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, '总计两条：killed/awaited/重复 id 全部不计入')
+  const data4 = JSON.parse(body4)
+  const kinds4 = data4.events.map((e) => e.kind)
+  ok(status4 === 200 && kinds4.filter((k) => k === 'jobdone').length === 1, 'jobs.events → jobdone 一次（前台 removed 与重复结算均不计）')
+  ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 一次（awaited=true 的后台作业延迟确认后仍提醒）')
+  ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, '总计两条：killed / 前台 / 重复 id 全部不计入')
+  ok(Array.isArray(data4.jobLog) && data4.jobLog.some((x) => x.type === 'removed') && data4.jobLog.some((x) => x.type === 'settled' && x.awaited === true), '诊断环 jobLog 随 /events 返回原始作业事件')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
