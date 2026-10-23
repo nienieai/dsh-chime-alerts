@@ -807,9 +807,15 @@ function sessionEventThreeArg(env, session, event) {
   env.emitService('jobs')
   ok(env.jobSubs.length === 1, '事件流挂在 jobs.events 上时也能挂接（0.2.0 实测契约）')
   const fire4 = env.jobSubs.length === 1 ? env.jobSubs[0].fn : () => {}
+  // awaited=false：真正的后台作业结束 → 必须提醒
   fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
-  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
+  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: false })
+  // awaited=true：前台 bash/pwsh 工具调用，等待方已拿到结果 → 不是「后台作业完成」，不得提醒
+  fire4({ type: 'settled', job: { id: 'bash-24', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: true })
+  fire4({ type: 'settled', job: { id: 'bash-25', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
+  // killed 不提醒；同一 id 重复结算只认一次
   fire4({ type: 'settled', job: { id: 'bash-23', kind: 'bash', status: 'killed', owner: 'root' }, cause: 'kill', awaited: false })
+  fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
   const route4 = routes4.find((rt) => rt.path === '/dsh-chime-alerts/events')
   ok(route4 !== undefined, 'jobs.events 形态：/events 端点已注册')
   let status4 = 0
@@ -817,9 +823,9 @@ function sessionEventThreeArg(env, session, event) {
   const res4 = { writeHead: (s) => { status4 = s }, end: (b) => { body4 = String(b || '') } }
   await route4.handler({ method: 'GET', url: '/dsh-chime-alerts/events?after=0' }, res4)
   const kinds4 = JSON.parse(body4).events.map((e) => e.kind)
-  ok(status4 === 200 && kinds4.filter((k) => k === 'jobdone').length === 1, 'jobs.events → jobdone 入队一次')
-  ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 入队一次（awaited 的终止也照常提醒）')
-  ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, 'killed 不计入（只有一条 jobdone + 一条 jobfail）')
+  ok(status4 === 200 && kinds4.filter((k) => k === 'jobdone').length === 1, 'jobs.events → jobdone 一次（awaited 与重复结算均不计）')
+  ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 一次（awaited=true 的前台调用不计）')
+  ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, '总计两条：killed/awaited/重复 id 全部不计入')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
