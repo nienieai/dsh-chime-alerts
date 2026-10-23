@@ -6,6 +6,13 @@ Thumbs.db
 runtime/
 .vscode/
 .idea/
-.chunks/
-tools/chunk-src.mjs
+# .chunks/ 里只有 host.txt / client.txt 是「按 README 方式 B 粘贴」所需的产物，
+# 必须随仓库分发（否则干净 clone 后、跑 npm run chunks 之前没有可粘的文件）；
+# 探针报告、临时校验脚本等一律不入库。
+.chunks/*
+!.chunks/host.txt
+!.chunks/client.txt
+# tools/chunk-src.mjs 是上面两个文件的唯一生成器，又被 package.json 的
+# test / check 脚本直接调用——不能忽略，否则干净 clone 下 npm test 直接
+# MODULE_NOT_FOUND（v0.5.8 修复）。
 .test-out.txt

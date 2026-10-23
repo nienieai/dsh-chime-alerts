@@ -15,6 +15,8 @@ function makeEnv(opts = {}) {
   const handlers = {}
   const spawns = []
   const jobDoneFns = []
+  // v0.5.8：DSH 0.2.0 的 jobs 服务没有 onJobDone，只有 subscribe(filter, listener)
+  const jobSubs = []
   const fsFiles = new Map()
   for (const p of opts.preseed ?? []) fsFiles.set(p.key, p.value)
   const fsMock = {
@@ -66,6 +68,12 @@ function makeEnv(opts = {}) {
       }
       if (name === 'jobs') {
         if (!jobsAvailable) return undefined
+        // jobsShape: 'legacy'（默认，onJobDone）| 'subscribe'（DSH 0.2.0 新契约）
+        if (opts.jobsShape === 'subscribe') {
+          return {
+            subscribe: (filter, fn) => { jobSubs.push({ filter, fn }); return () => {} },
+          }
+        }
         return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
       }
       if (name === 'dshHomePath') return (...parts) => ['C:/Users/ns/.dsh', ...parts].join('/')
@@ -109,7 +117,7 @@ function makeEnv(opts = {}) {
     for (const fn of listeners['internal/service'] ?? []) fn(name)
   }
   const pull = () => handlers.pull({ sessionId: null, after: 0 })
-  return { handlers, spawns, jobDoneFns, emit, emitService, pull, fsFiles, fsMock }
+  return { handlers, spawns, jobDoneFns, jobSubs, emit, emitService, pull, fsFiles, fsMock }
 }
 
 // 假 Session：只带当前 DSH **真实存在**的成员。
@@ -645,7 +653,7 @@ function sessionEventThreeArg(env, session, event) {
     ok(getStatus === 405, 'sysbeep GET 405')
   }
   // v0.5.8：/events 端点——静态客户端唯一的「宿主→浏览器」事件通道。
-  // 只转发快照拿不到的四类；complete 等不入队（避免与浏览器自检双响）。
+  // 只转发快照拿不到/已失效的六类；complete/subcomplete/goalblocked 不入队（避免双响）。
   if (eventsRoute !== undefined) {
     const call = async (url) => {
       let status = 0
@@ -656,7 +664,9 @@ function sessionEventThreeArg(env, session, event) {
     }
     const empty = await call('/dsh-chime-alerts/events?after=0')
     ok(empty.status === 200 && empty.data.ok === true && empty.data.events.length === 0, '/events 初始为空')
-    ok(Array.isArray(empty.data.kinds) && empty.data.kinds.indexOf('approval') >= 0 && empty.data.kinds.indexOf('complete') < 0, '/events kinds 只含需转发的四类')
+    ok(Array.isArray(empty.data.kinds) && empty.data.kinds.indexOf('approval') >= 0 && empty.data.kinds.indexOf('jobdone') >= 0 && empty.data.kinds.indexOf('jobfail') >= 0, '/events kinds 含 approval 与 jobdone/jobfail')
+    ok(empty.data.kinds.indexOf('complete') >= 0 && empty.data.kinds.indexOf('subcomplete') >= 0 && empty.data.kinds.indexOf('interrupt') >= 0, '/events kinds 含 complete/subcomplete/interrupt（判定权已归宿主）')
+    ok(empty.data.kinds.indexOf('goalblocked') < 0, '/events kinds 不含 goalblocked（projectionValues.goal 仍在，由浏览器快照自检，避免双响）')
 
     // 三类入队 + complete 不入队
     sessionEvent(env, { id: 'root' }, { type: 'approval/asked', data: { toolName: 'write' } })
@@ -668,7 +678,7 @@ function sessionEventThreeArg(env, session, event) {
     const first = await call('/dsh-chime-alerts/events?after=0')
     const kinds = first.data.events.map((e) => e.kind)
     ok(kinds.indexOf('approval') >= 0 && kinds.indexOf('question') >= 0 && kinds.indexOf('planreview') >= 0, '/events 转发 approval/question/planreview')
-    ok(kinds.indexOf('complete') < 0, '/events 不转发 complete（浏览器快照自检，避免双响）')
+    ok(kinds.indexOf('complete') >= 0, '/events 转发 complete（快照的 pendingInteraction 守卫恒真，旧路径会误判成完成）')
     ok(first.data.events.every((e) => typeof e.seq === 'number'), '/events 每条带递增 seq')
 
     // after 增量：用返回的 seq 再拉应无新事件
@@ -706,6 +716,72 @@ function sessionEventThreeArg(env, session, event) {
   ok(env.jobDoneFns.length === 1, 'jobs 服务出现后延迟挂接 onJobDone')
   for (const fn of env.jobDoneFns) fn({ id: 'bash-77', kind: 'bash', status: 'completed', ownerSession: 'root' }, { id: 'root' })
   ok(env.pull().events.some((e) => e.kind === 'jobdone'), '延迟挂接后 jobdone 正常记录')
+}
+
+// 21d. v0.5.8：jobdone / jobfail 必须经 /events 下发。
+// DSH 0.1.7 的 SessionListState 已无 jobsBySession，静态客户端自检恒不触发（恒为空对象）；
+// 宿主半的 jobs.onJobDone 一直检测正常，此前只是被挡在 CLIENT_PULL_KINDS 之外。
+{
+  const routes2 = []
+  const env = makeEnv({
+    noHarness: true,
+    deferredJobs: true,
+    webServerRegister: (route) => { routes2.push(route); return () => {} },
+  })
+  await new Promise((r) => setTimeout(r, 30))
+  const eventsRoute2 = routes2.find((rt) => rt.path === '/dsh-chime-alerts/events')
+  ok(eventsRoute2 !== undefined, 'jobdone/jobfail：/events 端点已注册')
+  env.emitService('jobs')
+  ok(env.jobDoneFns.length === 1, 'jobdone/jobfail：jobs 服务延迟挂接成功')
+  for (const fn of env.jobDoneFns) {
+    fn({ id: 'bash-901', kind: 'bash', status: 'completed', ownerSession: 'root' }, { id: 'root' })
+    fn({ id: 'bash-902', kind: 'bash', status: 'failed', ownerSession: 'root' }, { id: 'root' })
+    fn({ id: 'sub-903', kind: 'subagent', status: 'failed', ownerSession: 'root' }, { id: 'root' })
+    fn({ id: 'bash-904', kind: 'bash', status: 'killed', ownerSession: 'root' }, { id: 'root' })
+  }
+  let status2 = 0
+  let body2 = ''
+  const res2 = { writeHead: (s) => { status2 = s }, end: (b) => { body2 = String(b || '') } }
+  await eventsRoute2.handler({ method: 'GET', url: '/dsh-chime-alerts/events?after=0' }, res2)
+  const data2 = JSON.parse(body2)
+  const kinds2 = data2.events.map((e) => e.kind)
+  ok(status2 === 200 && kinds2.indexOf('jobdone') >= 0, '/events 转发 jobdone（快照已失效，改由宿主下发）')
+  ok(kinds2.indexOf('jobfail') >= 0, '/events 转发 jobfail')
+  ok(kinds2.filter((k) => k === 'jobdone').length === 1 && kinds2.filter((k) => k === 'jobfail').length === 1, '完成/失败作业各入队一次（subagent 与 killed 跳过）')
+  ok(kinds2.indexOf('goalblocked') < 0, 'goalblocked 不入队（仍由浏览器快照自检，避免双响）')
+}
+
+// 21e. v0.5.8：DSH 0.2.0 的 jobs 服务**没有** onJobDone（JobRegistry 改为
+// subscribe(filter, listener) 事件流，终止态是 { type:'settled', job }）。
+// 只认旧契约时 apply 期直接 return false、永不挂接，于是 0.2.0 上
+// jobdone/jobfail 的宿主蜂鸣静默失效——不报错、不响，最难排查的一种坏法。
+{
+  const routes3 = []
+  const env = makeEnv({
+    noHarness: true,
+    jobsShape: 'subscribe',
+    deferredJobs: true,
+    webServerRegister: (route) => { routes3.push(route); return () => {} },
+  })
+  await new Promise((r) => setTimeout(r, 30))
+  env.emitService('jobs')
+  ok(env.jobSubs.length === 1, 'jobs 服务只有 subscribe 时也能挂接（0.2.0 契约）')
+  ok(env.jobSubs.length === 1 && env.jobSubs[0].filter !== undefined && env.jobSubs[0].filter.owners === 'all', 'subscribe 过滤器用 { owners: "all" }')
+  const subFire = env.jobSubs.length === 1 ? env.jobSubs[0].fn : () => {}
+  subFire({ type: 'registered', job: { id: 'bash-11', kind: 'bash', status: 'running', owner: 'root' } })
+  subFire({ type: 'settled', job: { id: 'bash-11', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'exit', awaited: false })
+  subFire({ type: 'settled', job: { id: 'bash-12', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'exit', awaited: false })
+  subFire({ type: 'settled', job: { id: 'sub-13', kind: 'subagent', status: 'failed', owner: 'root' }, cause: 'exit', awaited: false })
+  subFire({ type: 'settled', job: { id: 'bash-14', kind: 'bash', status: 'killed', owner: 'root' }, cause: 'cancel', awaited: false })
+  const route3 = routes3.find((rt) => rt.path === '/dsh-chime-alerts/events')
+  ok(route3 !== undefined, 'jobs.subscribe 形态：/events 端点已注册')
+  let status3 = 0
+  let body3 = ''
+  const res3 = { writeHead: (s) => { status3 = s }, end: (b) => { body3 = String(b || '') } }
+  await route3.handler({ method: 'GET', url: '/dsh-chime-alerts/events?after=0' }, res3)
+  const kinds3 = JSON.parse(body3).events.map((e) => e.kind)
+  ok(status3 === 200 && kinds3.filter((k) => k === 'jobdone').length === 1, 'settled → jobdone 入队一次（registered/killed/subagent 均不计）')
+  ok(kinds3.filter((k) => k === 'jobfail').length === 1, 'settled → jobfail 入队一次')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)
