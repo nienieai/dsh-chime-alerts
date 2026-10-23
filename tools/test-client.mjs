@@ -117,7 +117,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   ok(page.filter((n) => n.type === 'div' && (n.props.className === 'snd-row' || n.props.className === 'snd-row off')).length === 10, '设置页渲染 10 张事件卡片')
   ok(byText(page, '插件授权') !== undefined, '渲染「插件授权」事件行')
-  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.id === 'chime'), '注册设置分区 chime')
+  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && String(r.options.id).indexOf('chime') === 0), '注册设置分区 chime')
 }
 
 // 2. 完成事件 → 播放合成音（v0.3.15 四音符，基音 + 泛音）
@@ -508,7 +508,14 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   Object.defineProperty(globalThis, 'navigator', origNav)
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   const page = render(comp())
-  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.label === 'Sound Alerts'), '英文分区标题 Sound Alerts')
+  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && (typeof r.options.label === 'function' ? r.options.label() : r.options.label) === 'Sound Alerts'), '英文分区标题 Sound Alerts')
+  // v0.5.9：id 固定、label 是 thunk（真机曾因字符串 label + 换 id 硬刷导致导航项不跟语言）
+  {
+    const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
+    ok(reg.options.id === 'chime-alerts', '英文下分区 id 固定为 chime-alerts')
+    ok(typeof reg.options.label === 'function', '分区 label 是 thunk')
+    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.8') === 0), '英文版本标注 Dynamic build v0.5.8')
+  }
   ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All muted')), '英文批量按钮 All muted')
   const titles = page.filter((n) => n.props.className === 'snd-grp-name').map((n) => n.children[0])
   ok(titles.length === 3 && titles[0] === 'Primary notifications' && titles[2] === 'Human action needed', '英文分组标题')

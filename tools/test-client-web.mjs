@@ -220,7 +220,12 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 1. ModuleLoader 封套 + 设置分区注册
 {
   const env = makeEnv()
-  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && r.options.id === 'chime'), '注册设置分区 chime')
+  ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && String(r.options.id).indexOf('chime') === 0), '注册设置分区 chime')
+  // v0.5.9：分区 id 固定（不再随语言变 chime-zh / chime-en），导航文字靠 label thunk
+  const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
+  ok(reg.options.id === 'chime-alerts', '分区 id 固定为 chime-alerts（不随语言变化）')
+  ok(typeof reg.options.label === 'function', '分区 label 是 thunk（外壳每次投影重读）')
+  ok(reg.options.label() === '声音提醒', '默认语言下 label 返回中文')
 }
 
 // 1b. inject 必须声明 timer（apply 使用 ctx.interval/ctx.timeout，缺失即
@@ -570,6 +575,12 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(byText(page, 'Sound alerts') !== undefined, 'locale=en 时标题为英文（Sound alerts）')
   ok(byText(page, 'Browser sound') !== undefined, 'locale=en 时 chip 文案为英文')
   ok(byText(page, 'Workspace mute') !== undefined || true, '英文分组文案存在（无工作区时跳过）')
+  // v0.5.9：导航项文字同源 —— label thunk 在英文下必须返回英文（真机曾整页英文但导航仍是中文）
+  const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
+  ok(reg.options.label() === 'Sound Alerts', 'locale=en 时分区 label 返回英文 Sound Alerts')
+  ok(reg.options.id === 'chime-alerts', 'locale=en 时分区 id 仍是 chime-alerts')
+  // v0.5.9：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
+  ok(byText(page, 'Static build v0.5.8') !== undefined, 'locale=en 时版本标注为英文')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
