@@ -532,11 +532,12 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const env = makeEnv()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   ok(page.filter((n) => n.type === 'div' && (n.props.className === 'snd-row' || n.props.className === 'snd-row off')).length === 10, '设置页渲染 10 张事件卡片')
-  ok(byText(page, '启用声音提醒') !== undefined, '总开关存在')
+  ok(byText(page, '声音提醒') !== undefined, '总开关存在')
   ok(byText(page, '网页响铃') !== undefined, '网页响铃开关存在')
   ok(byText(page, '网页通知') !== undefined, '网页通知开关存在')
   ok(byText(page, '宿主蜂鸣') !== undefined, '宿主蜂鸣开关存在')
   ok(byText(page, '插件授权') !== undefined, '渲染「插件授权」事件行')
+  ok(page.filter((n) => n.type === 'input' && n.props && n.props.type === 'range' && n.props.min === 0 && n.props.max === 100).length === 10, '每个事件都有常驻音量滑条（不再折叠隐藏）')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
@@ -546,49 +547,21 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const env = makeEnv()
   const calls = env.fetchCalls
   ok(calls.some((c) => c.url.indexOf('/sysget') >= 0), '启动时读取宿主设置（/sysget）')
-  // 在未拍平的组件树上找到「宿主蜂鸣」snd-master 行,取该行内的 switch 按钮
+  // v0.5.9：宿主蜂鸣从「独立一行开关」改为顶部 chip（.snd-chip），按其文本定位
   const root = env.slotRegs.find((r) => r.options.name === 'settings.section').component()
-  let hostSwitchOnClick = null
-  const nameOf = (x) => { // 取一个节点里可能的内嵌 label 文本
+  const page = render(root)
+  const nameOf = (x) => {
     if (x === null || x === undefined) return ''
     if (typeof x === 'string') return x
     if (Array.isArray(x)) return x.map((c) => nameOf(c)).join('')
     if (typeof x.type === 'function') return nameOf(x.type(x.props))
-    if (x.type === 'span' && x.props && x.props.className === 'snd-name') {
-      const sk = x.props.children !== undefined ? x.props.children : x.children
-      return nameOf(sk)
-    }
     const k = x.props && x.props.children !== undefined ? x.props.children : x.children
     return nameOf(k)
   }
-  const innerSwitch = (x) => {
-    if (x === null || x === undefined || hostSwitchOnClick !== null) return
-    if (Array.isArray(x)) { x.forEach(innerSwitch); return }
-    if (typeof x === 'string' || typeof x === 'number') return
-    if (typeof x.type === 'function') { innerSwitch(x.type(x.props)); return }
-    if (typeof x.type === 'string' && x.props && x.props.role === 'switch' && typeof x.props.onClick === 'function') { hostSwitchOnClick = x.props.onClick; return }
-    const k = x.props && x.props.children !== undefined ? x.props.children : x.children
-    innerSwitch(k)
-  }
-  const walk = (n) => {
-    if (n === null || n === undefined || hostSwitchOnClick !== null) return
-    if (Array.isArray(n)) { n.forEach(walk); return }
-    if (typeof n === 'string' || typeof n === 'number') return
-    if (typeof n.type === 'function') { walk(n.type(n.props)); return }
-    if (n.type === 'div' && n.props && n.props.className === 'snd-master') {
-      const k = n.props.children !== undefined ? n.props.children : n.children
-      if (nameOf(k).indexOf('宿主蜂鸣') >= 0 || nameOf(k).indexOf('Host beep') >= 0) {
-        innerSwitch(k)
-        return
-      }
-    }
-    const k = n.props && n.props.children !== undefined ? n.props.children : n.children
-    walk(k)
-  }
-  walk(root)
-  ok(hostSwitchOnClick !== null, '宿主蜂鸣开关可点击')
+  const hostChip = page.find((n) => n.type === 'button' && n.props && n.props['data-chip'] === 'hostBeep')
+  ok(hostChip !== undefined && typeof hostChip.props.onClick === 'function', '宿主蜂鸣开关可点击')
   const before = calls.length
-  hostSwitchOnClick()
+  hostChip.props.onClick()
   ok(calls.length > before && calls.slice(before).some((c) => c.url.indexOf('/sysset') >= 0), '切换后写宿主设置（/sysset）')
 }
 
@@ -607,7 +580,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(hostSelects.length === 10, '每行一个宿主音下拉')
   const hostMutes = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0)
   ok(hostMutes.length === 10, '每行一个宿主静音键')
-  const hostPreviews = page.filter((n) => n.type === 'button' && n.props.className === 'snd-btn' && n.children !== undefined && n.children.some((c) => String(c) === '宿主试听'))
+  const hostPreviews = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostpreview') >= 0)
   ok(hostPreviews.length === 10, '每行一个宿主试听按钮')
   const before = calls.length
   hostSelects[0].props.onChange({ target: { value: 'Windows Error.wav' } })
