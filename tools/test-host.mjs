@@ -68,10 +68,18 @@ function makeEnv(opts = {}) {
       }
       if (name === 'jobs') {
         if (!jobsAvailable) return undefined
-        // jobsShape: 'legacy'（默认，onJobDone）| 'subscribe'（DSH 0.2.0 新契约）
+        // jobsShape: 'legacy'（默认，onJobDone）| 'subscribe'（jobs.subscribe）
+        //            | 'events'（DSH 0.2.0+：注册表无 subscribe，事件流挂在 jobs.events 上）
         if (opts.jobsShape === 'subscribe') {
           return {
             subscribe: (filter, fn) => { jobSubs.push({ filter, fn }); return () => {} },
+          }
+        }
+        if (opts.jobsShape === 'events') {
+          return {
+            events: {
+              subscribe: (filter, fn) => { jobSubs.push({ filter, fn }); return () => {} },
+            },
           }
         }
         return { onJobDone: (fn) => { jobDoneFns.push(fn) } }
@@ -782,6 +790,36 @@ function sessionEventThreeArg(env, session, event) {
   const kinds3 = JSON.parse(body3).events.map((e) => e.kind)
   ok(status3 === 200 && kinds3.filter((k) => k === 'jobdone').length === 1, 'settled → jobdone 入队一次（registered/killed/subagent 均不计）')
   ok(kinds3.filter((k) => k === 'jobfail').length === 1, 'settled → jobfail 入队一次')
+}
+
+// 21f. v0.5.8 实测回归（desktop 内嵌 dsh）：注册表**没有** subscribe，事件流挂在
+// `jobs.events` 属性上（JobEvents.subscribe）。只认 jobs.subscribe 会判否、永不挂接，
+// 表现就是「后台任务完成/失败」在任何界面上都不响——本轮真机测试踩到的就是这个。
+{
+  const routes4 = []
+  const env = makeEnv({
+    noHarness: true,
+    jobsShape: 'events',
+    deferredJobs: true,
+    webServerRegister: (route) => { routes4.push(route); return () => {} },
+  })
+  await new Promise((r) => setTimeout(r, 30))
+  env.emitService('jobs')
+  ok(env.jobSubs.length === 1, '事件流挂在 jobs.events 上时也能挂接（0.2.0 实测契约）')
+  const fire4 = env.jobSubs.length === 1 ? env.jobSubs[0].fn : () => {}
+  fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
+  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
+  fire4({ type: 'settled', job: { id: 'bash-23', kind: 'bash', status: 'killed', owner: 'root' }, cause: 'kill', awaited: false })
+  const route4 = routes4.find((rt) => rt.path === '/dsh-chime-alerts/events')
+  ok(route4 !== undefined, 'jobs.events 形态：/events 端点已注册')
+  let status4 = 0
+  let body4 = ''
+  const res4 = { writeHead: (s) => { status4 = s }, end: (b) => { body4 = String(b || '') } }
+  await route4.handler({ method: 'GET', url: '/dsh-chime-alerts/events?after=0' }, res4)
+  const kinds4 = JSON.parse(body4).events.map((e) => e.kind)
+  ok(status4 === 200 && kinds4.filter((k) => k === 'jobdone').length === 1, 'jobs.events → jobdone 入队一次')
+  ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 入队一次（awaited 的终止也照常提醒）')
+  ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, 'killed 不计入（只有一条 jobdone + 一条 jobfail）')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

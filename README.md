@@ -65,7 +65,7 @@ dsh plugin --profile web add dsh-chime-alerts
 
 ## 工作原理
 
-- 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权）、`goal/changed`（目标受阻）、`tools/execute`（提问、计划评审）、`tools/result`（插件授权，v0.4.4+）、`jobs`（后台任务完成/失败，静态安装延迟挂接，v0.5.4+；**两代契约都支持**：≤ 0.1.7 的 `jobs.onJobDone(snapshot, owner)`，以及 0.2.0+ 的 `jobs.subscribe({ owners: 'all' }, …)` 只认 `{ type: 'settled', job }` —— 0.2.0 删掉了 `onJobDone`，只认旧 API 会让这两类宿主蜂鸣静默失效），节流 3s（种类+来源）后入事件缓冲
+- 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权）、`goal/changed`（目标受阻）、`tools/execute`（提问、计划评审）、`tools/result`（插件授权，v0.4.4+）、`jobs`（后台任务完成/失败，静态安装延迟挂接，v0.5.4+；**三代契约都支持**：≤ 0.1.7 的 `jobs.onJobDone(snapshot, owner)`、部分 0.1.x 构建的 `jobs.subscribe(…)`、以及 0.2.0+ 的 `jobs.events.subscribe({ owners: 'all' }, …)`——0.2.0 把事件流挂在注册表的 `events` 属性上而不是注册表本身，只认前两种会让这两类宿主蜂鸣静默失效；一律只认 `{ type: 'settled', job }`），节流 3s（种类+来源）后入事件缓冲
 - 动态客户端每 700ms 拉取播放；15 秒以上旧事件跳过；boot 令牌防版本串扰；完成/打断类 800ms 防抖，主代理 `inbox.hasPending` 跳过。静态客户端订阅 `sessions`/`workspaces` 快照，**只保留「目标受阻」（goal 投影）**由快照自检，并每 1500ms 拉 `/dsh-chime-alerts/events` 补齐其余九类（授权 / 提问 / 计划评审 / 插件授权 / 后台任务完成 / 后台任务失败 / 完成 / 子任务完成 / 打断；宿主只对这九类入队，与快照自检不重叠——`jobsBySession` 自 0.1.7 起不在快照内、完成三类的 `pendingInteraction` 守卫自 0.1.5 起恒真，故一并改由宿主判定）；`/events` 响应的 `boot` 令牌每次宿主重启都会更换、`seq` 从 0 重新计数，客户端据此把游标归零——漏掉这一步，长开标签页的游标会停在旧宿主的 `seq` 上，此后被宿主侧 `ev.seq > after` 全部挡掉而永久失声（只能靠刷新恢复）
 - 浏览器音零音频文件；系统蜂鸣 Windows 走临时 `.vbs` + `wscript.exe` + WMP（避开安全软件拦截 PowerShell；静态安装经 node:fs 直写，v0.5.4+），Linux/macOS 见上
 
@@ -103,7 +103,7 @@ docs/REGISTRIES.md   社区市场上架指南
 本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档），详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
-npm test      # 宿主 117 + 客户端 96 + 静态客户端 74 项断言（Node 即可，无需浏览器/DSH）
+npm test      # 宿主 122 + 客户端 96 + 静态客户端 74 项断言（Node 即可，无需浏览器/DSH）
 npm run check # 语法检查 + .chunks 与源码一致性检查
 npm run chunks # 改完 lib/host.js 或 lib/client.js 后重建动态安装用的 .chunks/*.txt
 ```
