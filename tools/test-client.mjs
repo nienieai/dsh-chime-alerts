@@ -514,7 +514,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
     ok(reg.options.id === 'chime-alerts', '英文下分区 id 固定为 chime-alerts')
     ok(typeof reg.options.label === 'function', '分区 label 是 thunk')
-    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.8') === 0), '英文版本标注 Dynamic build v0.5.8')
+    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.9') === 0), '英文版本标注 Dynamic build v0.5.9')
   }
   ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All muted')), '英文批量按钮 All muted')
   const titles = page.filter((n) => n.props.className === 'snd-grp-name').map((n) => n.children[0])

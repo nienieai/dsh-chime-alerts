@@ -580,7 +580,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(reg.options.label() === 'Sound Alerts', 'locale=en 时分区 label 返回英文 Sound Alerts')
   ok(reg.options.id === 'chime-alerts', 'locale=en 时分区 id 仍是 chime-alerts')
   // v0.5.9：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
-  ok(byText(page, 'Static build v0.5.8') !== undefined, 'locale=en 时版本标注为英文')
+  ok(byText(page, 'Static build v0.5.9') !== undefined, 'locale=en 时版本标注为英文')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
@@ -634,7 +634,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const before3 = calls.length
   hostPreviews[2].props.onClick()
   ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
-  ok(byText(page, '静态版 v0.5.8') !== undefined, '设置页底部标注版本 v0.5.8')
+  ok(byText(page, '静态版 v0.5.9') !== undefined, '设置页底部标注版本 v0.5.9')
 }
 
 // 9d. v0.5.6：useVersion 必须函数式更新（setState(x => x + 1)）。闭包捕获初值
