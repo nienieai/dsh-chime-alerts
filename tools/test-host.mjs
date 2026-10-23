@@ -833,8 +833,10 @@ function sessionEventThreeArg(env, session, event) {
   // 2) 前台调用：结算后立刻被 remove → 待发提醒必须撤销
   fire4({ type: 'settled', job: { id: 'bash-24', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: true })
   fire4({ type: 'removed', job: { id: 'bash-24', kind: 'bash', status: 'completed', owner: 'root' } })
-  // 3) 真后台作业：awaited=true 但不会被立刻移除 → 短延迟后必须提醒
-  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'failed', owner: 'root' }, cause: 'producer', awaited: true })
+  // 3) 真后台作业：awaited=true 但不会被立刻移除 → 短延迟后必须提醒。
+  //    DSH 契约：非零退出码**不算** failed（只写进 detail），所以这里用
+  //    status='completed' + detail='exit code: 1' 钉住「失败」的判定
+  fire4({ type: 'settled', job: { id: 'bash-22', kind: 'bash', status: 'completed', detail: 'exit code: 1', owner: 'root' }, cause: 'producer', awaited: true })
   // 4) killed 不提醒；同一 id 重复结算只认一次
   fire4({ type: 'settled', job: { id: 'bash-23', kind: 'bash', status: 'killed', owner: 'root' }, cause: 'kill', awaited: false })
   fire4({ type: 'settled', job: { id: 'bash-21', kind: 'bash', status: 'completed', owner: 'root' }, cause: 'producer', awaited: false })
