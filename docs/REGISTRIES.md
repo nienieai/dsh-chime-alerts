@@ -4,15 +4,15 @@
 官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
 （Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
 
-> **状态（2026-10-24）**：本版为 `0.5.10`（`0.5.9` 未发布，tag 已删除，内容并入本版）。npm 上此前的 `latest` 是 `0.5.7`，`0.5.8` / `0.5.10` 之间隔了两代：`0.5.8` 是三代 DSH 契约适配，`0.5.10` 是设置页 V3 改版 + 工作区静音重写 + 界面语言跟随 DSH locale。发布由维护者执行 `npm publish`（账号启用了 2FA，无人值守环境过不了 EOTP）。
+> **状态（2026-10-24）**：`0.5.10` 已发布到 npm（`latest = 0.5.10`，`gitHead = 46d830f`，2026-10-24T01:29Z），GitHub 上 `v0.5.10` 标签与 Release 同步。跳过的两个版本号：`0.5.8`（三代 DSH 契约适配）与 `0.5.9`（打完内部标签后又修掉导航图标与动态版 `const` 两个问题，故并入 `0.5.10`、tag 已删）都没有上传，因此从 `0.5.7` 升级的用户会一次性拿到两代改动。发布账号启用了 2FA，`npm publish` 必须在维护者终端完成授权（网页 `/auth/cli/*` 或 `--otp`，一次性令牌有时效，过期会得到 `Invalid or Expired Token` 的 404 页）。
 
 ## 发布前检查
 
 - [x] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（`nienieai/dsh-chime-alerts`）
 - [ ] `LICENSE` 版权行换成作者真名/昵称
-- [x] npm 包名 `dsh-chime-alerts` 未被占用（已于 2026-08-25 发布 `0.5.6`，`0.5.7` 为当前 `latest`；`0.5.8` / `0.5.10` 待补发）
+- [x] npm 包名 `dsh-chime-alerts` 未被占用（2026-08-25 首次发布 `0.5.6`；当前 `latest` 为 `0.5.10`）
 - [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 工作区静音标记）
-- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`；`0.5.10` 待维护者本地执行）
+- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`，2026-10-24 发布 `0.5.10`）
 - [x] 静态双端完成后再声明 `dsh.client`（v0.5.0 起已声明并实测：经典脚本封套 + `exports["./client"]`）
 
 ## 已实证的静态 bundle 模板
