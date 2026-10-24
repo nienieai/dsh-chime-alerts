@@ -4,6 +4,7 @@
 // 六类宿主事件转发（approval/question/planreview/pluginapproval/jobdone/jobfail）、
 // AudioContext 挂起解锁（自动播放策略）、工作区静音、节流、设置页渲染、自定义音频持久化。
 import { readFileSync } from 'node:fs'
+import { installFakeDom } from './fake-dom.mjs'
 
 const source = readFileSync(new URL('../lib/client.web.js', import.meta.url), 'utf8')
 
@@ -923,6 +924,49 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   env.runIntervals()
   await flush()
   ok(env.oscs.length > n0, '恢复后宿主事件照常播放')
+}
+
+// 15. v0.5.9：设置导航项图标改为按文字定位（假 DOM 驱动真实代码路径）
+// 回归背景：旧实现用 `.VOzbGW_navCell:nth-child(5)`（外壳混淆类名 + 硬编码序号），
+// 外壳一改就整条静默失效——真机上导航项退回默认齿轮，且没有任何报错。
+{
+  const dom = installFakeDom({
+    body: [{
+      tag: 'div', className: 'navList', children: [
+        { tag: 'div', className: 'navCell', children: [{ tag: 'svg' }, { tag: 'span', text: '通用设置' }] },
+        { tag: 'div', className: 'navCell', children: [{ tag: 'svg' }, { tag: 'span', text: '声音提醒' }] },
+      ],
+    }],
+  })
+  const env = makeEnv()
+  env.runIntervals()
+  const cells = dom.findAll('.navCell')
+  const ours = cells.find((el) => el.textContent.trim() === '声音提醒')
+  const other = cells.find((el) => el.textContent.trim() === '通用设置')
+  ok(ours !== undefined && ours.getAttribute('data-chime-nav') === '1', '导航行按文字被打上 data-chime-nav')
+  ok(other !== undefined && other.getAttribute('data-chime-nav') === null, '其它设置分区的行未被误标')
+  const cssText = dom.head.children.map((c) => c.textContent).join('\n')
+  ok(cssText.indexOf('[data-chime-nav]') >= 0, '样式改用 data-chime-nav 选择器')
+  ok(cssText.indexOf('nth-child(5)') < 0, '样式不再依赖外壳序号 nth-child(5)')
+  ok(cssText.indexOf('M18%208A6%206') >= 0, '图标是描边铃铛（feather bell 路径）')
+  // 重复同步必须幂等（不能每次多插一个图标）
+  env.runIntervals()
+  ok(dom.findAll('.navCell').filter((el) => el.getAttribute('data-chime-nav') === '1').length === 1, '反复同步仍只标记一行')
+  dom.restore()
+}
+
+// 15b. 英文界面下按英文标签定位（导航项文字与页面内容同源）
+{
+  const dom = installFakeDom({
+    body: [{
+      tag: 'div', className: 'navCell', children: [{ tag: 'svg' }, { tag: 'span', text: 'Sound Alerts' }],
+    }],
+  })
+  const env = makeEnv(undefined, undefined, undefined, undefined, 'en-US')
+  env.runIntervals()
+  const row = dom.findAll('.navCell')[0]
+  ok(row !== undefined && row.getAttribute('data-chime-nav') === '1', '英文界面按 Sound Alerts 定位到导航行')
+  dom.restore()
 }
 
 if (failures === 0) console.log('all client-web tests passed')

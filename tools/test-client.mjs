@@ -2,6 +2,7 @@
 // 用假 React / window / slots / host 驱动 client.js，断言默认值、持久化迁移、
 // 事件触发播放、系统蜂鸣兜底、快捷静音按钮与插槽注册。
 import { readFileSync } from 'node:fs'
+import { installFakeDom } from './fake-dom.mjs'
 
 const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
 
@@ -88,7 +89,8 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
     ctx, react, console, styles, host, undefined
   )
   plugin.apply(ctx)
-  return { storage, oscs, gainRamps, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0]() }
+  return { storage, oscs, gainRamps, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0](),
+    runIntervals: () => { for (const fn of intervals.slice()) { try { fn() } catch (err) {} } } }
 }
 
 /** 递归渲染 createElement 树（组件函数被调用展开），返回所有真实 DOM 型节点。 */
@@ -559,6 +561,34 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const page3 = render(env3.slotRegs.find((r) => r.options.name === 'settings.section').component())
   ok(page3.some((n) => n.type === 'option' && n.props.value === 'custom:lib1' && n.children !== undefined &&
     String(n.children[0]).indexOf('my.mp3') >= 0), '音频库条目出现在声音下拉（所有事件共享）')
+}
+
+// 13. v0.5.9：导航图标与工作区标记走真实 DOM 路径（假 DOM 驱动）
+// 回归背景之一：这段代码此前把需要重新赋值的绑定写成了 const（`for (const i = 0; …)`、
+// `const titleEl = null` 之后再赋值），运行时必抛 TypeError，又被外层 try/catch 吞掉——
+// 动态安装下工作区标记从来不显示，且没有任何日志可查。
+{
+  const dom = installFakeDom({
+    body: [
+      { tag: 'div', className: 'navCell', children: [{ tag: 'svg' }, { tag: 'span', text: '声音提醒' }] },
+      { tag: 'div', attrs: { role: 'treeitem', 'aria-expanded': 'true' },
+        rect: { left: 20, top: 100, right: 300, bottom: 128, width: 280, height: 28 },
+        children: [
+          { tag: 'div', children: [{ tag: 'span', text: 'K230' }] },
+          { tag: 'button', rect: { left: 260, top: 104, right: 280, bottom: 124, width: 20, height: 20 } },
+        ] },
+    ],
+  })
+  const env = makeEnv({ muted: ['w1'] }, undefined, [], [{ workspaceId: 'w1', title: 'K230' }])
+  env.runIntervals()
+  const navRow = dom.findAll('.navCell')[0]
+  ok(navRow !== undefined && navRow.getAttribute('data-chime-nav') === '1', '导航行被打上 data-chime-nav')
+  ok(env.styles.inserted[0].indexOf('[data-chime-nav]') >= 0, '动态版样式包含导航图标选择器')
+  const marks = dom.findAll('.snd-ws-mark')
+  ok(marks.length === 1, '已静音工作区渲染出标记（const 重新赋值 bug 回归）')
+  ok(marks[0] !== undefined && marks[0].style.left === '241px', '标记贴在「…」按钮左侧（260-19=241）')
+  ok(marks[0] !== undefined && marks[0].getAttribute('data-chime-ws-mark') === 'w1', '标记带工作区 id')
+  dom.restore()
 }
 
 console.log(failures === 0 ? '\nall client tests passed' : `\n${failures} client test(s) FAILED`)
