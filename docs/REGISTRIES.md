@@ -4,6 +4,8 @@
 官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
 （Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
 
+> **状态（2026-10-24 19:20）**：`0.6.0` 已提交到 `main`（`575bed4`），**尚未发布**——npm `latest` 仍是 `0.5.10`。发布前先在本机重启一次 DSH（宿主半是进程启动时加载的），确认新设置页（三选一 / 通知等级 / 自绘下拉）与宿主通知在真机上可用；静态版与动态版设置页已对齐，通知在 Windows / macOS / Linux 均有实现（Windows 需重启后才会用上 DSH 的 AUMID 与 UTF-8 BOM 修正）。
+
 > **状态（2026-10-24）**：`0.5.10` 已发布到 npm（`latest = 0.5.10`，`gitHead = 46d830f`，2026-10-24T01:29Z），GitHub 上 `v0.5.10` 标签与 Release 同步。跳过的两个版本号：`0.5.8`（三代 DSH 契约适配）与 `0.5.9`（打完内部标签后又修掉导航图标与动态版 `const` 两个问题，故并入 `0.5.10`、tag 已删）都没有上传，因此从 `0.5.7` 升级的用户会一次性拿到两代改动。发布账号启用了 2FA，`npm publish` 必须在维护者终端完成授权（网页 `/auth/cli/*` 或 `--otp`，一次性令牌有时效，过期会得到 `Invalid or Expired Token` 的 404 页）。
 
 ## 发布前检查

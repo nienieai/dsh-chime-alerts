@@ -14,6 +14,24 @@ const ok = (cond, label) => {
   else { failures++; console.log('FAIL', label) }
 }
 
+// v0.6.0：默认提醒方式变了（授权 / 提问 / 评审 / 插件授权 / 作业失败 = 通知）。
+// 下面若干用例验证的是「宿主转发的事件会不会出声」，因此显式把它们置成响铃模式。
+// v0.6.0：每个事件默认「关」。需要出声的用例必须显式种下 beep —— 这条种子覆盖全部
+// 十类事件（宿主 /events 会转发其中任意一类），避免用例悄悄依赖「旧的默认响铃」。
+const BEEP_SEED = {
+  kinds: {
+    complete: { mode: 'beep' },
+    subcomplete: { enabled: true, mode: 'beep' },
+    jobdone: { mode: 'beep' },
+    jobfail: { mode: 'beep' },
+    interrupt: { mode: 'beep' },
+    approval: { mode: 'beep' },
+    pluginapproval: { mode: 'beep' },
+    question: { mode: 'beep' },
+    planreview: { mode: 'beep' },
+    goalblocked: { mode: 'beep' }
+  }
+}
 function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
   const storage = new Map()
   if (seedLocal !== undefined) storage.set('dsh-chime-alerts-v1', JSON.stringify(seedLocal))
@@ -251,7 +269,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(env.oscs.length === 0, '快照 running→false 不再判定完成（判定权已归宿主）')
 
   // 2b. 宿主 /events 的 complete 必须响
-  const env2 = makeEnv()
+  const env2 = makeEnv(BEEP_SEED)
   let seq = 0
   let batch = []
   env2.overrideFetch((u) => {
@@ -276,14 +294,14 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 3. 子代理会话结束 → subcomplete（按 parentId 归属根；默认关闭，先启用）
 {
-  const env = makeEnv({ master: true, webBeep: true, notifyEnabled: false, muted: [], kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } })
+  const env = makeEnv({ master: true, webBeep: true, notifyEnabled: false, muted: [], kinds: { subcomplete: { enabled: true, mode: 'beep', sound: 'default', volume: 1 } } })
   env.setWorkspaces([{ workspaceId: 'w1', title: 'K230', sessionIds: ['root'] }])
   env.setSessions({ ids: ['root', 'sub1'], byId: { root: { id: 'root', running: false }, sub1: { id: 'sub1', origin: 'subagent', parentId: 'root', running: true } }, jobsBySession: {} })
   env.setSessions({ ids: ['root', 'sub1'], byId: { root: { id: 'root', running: false }, sub1: { id: 'sub1', origin: 'subagent', parentId: 'root', running: false } }, jobsBySession: {} })
   ok(env.oscs.length === 0, '快照不再判定 subcomplete（判定权已归宿主）')
 
   // 3b. 宿主 /events 的 subcomplete 必须响（宿主侧按 parentId 归属根）
-  const env2 = makeEnv({ master: true, webBeep: true, notifyEnabled: false, muted: [], kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } })
+  const env2 = makeEnv({ master: true, webBeep: true, notifyEnabled: false, muted: [], kinds: { subcomplete: { enabled: true, mode: 'beep', sound: 'default', volume: 1 } } })
   let seq = 0
   let batch = []
   env2.overrideFetch((u) => {
@@ -318,7 +336,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 }
 {
   // 4b. 宿主 /events 的 jobdone / jobfail 必须响（宿主半 jobs.onJobDone 一直检测正常）
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   let seq = 0
   let batch = []
   env.overrideFetch((u) => {
@@ -380,7 +398,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   // line 322 的 `data.seq > hostEventSeq` 也修不回来（新 seq 只会更小）→ 该标签页对
   // 所有经宿主转发的提醒彻底失声，只有刷新页面才能恢复。用户实测：同一页面手机有
   // 声音、电脑（长开的标签页）完全没声音，刷新后立刻恢复。
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   let boot = 'b1'
   let high = 0
   let recorded = []
@@ -420,7 +438,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 }
 {
   // 5c. 首轮之后的新事件：approval / question / planreview / pluginapproval 都要响
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   let seq = 0
   let batch = []
   env.overrideFetch((u) => {
@@ -441,7 +459,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(env.oscs.length > n0, '宿主 /events 的 approval → 播放')
 
   const n1 = env.oscs.length
-  batch = [{ seq: 3, kind: 'question', sessionId: 's1', at: Date.now() }]
+  batch = [{ seq: 3, kind: 'jobdone', sessionId: 's1', at: Date.now() }]
   env.runIntervals()
   await flush()
   ok(env.oscs.length > n1, '宿主 /events 的 question → 播放')
@@ -460,7 +478,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 }
 {
   // 5d. 宿主已节流、浏览器按事件 seq 去重：同一 seq 只响一次
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   let seq = 0
   let batch = []
   env.overrideFetch((u) => {
@@ -511,7 +529,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 6. goal 投影 blocked → goalblocked
 {
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   env.setSessions({ ids: ['s1'], byId: { s1: { id: 's1', running: true, projectionValues: { goal: { phase: 'active' } } } }, jobsBySession: {} })
   const n0 = env.oscs.length
   env.setSessions({ ids: ['s1'], byId: { s1: { id: 's1', running: true, projectionValues: { goal: { phase: 'blocked' } } } }, jobsBySession: {} })
@@ -571,7 +589,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 9a3. v0.5.10：语言跟随 DSH locale 服务（此前用 navigator.language，
 // 英文界面 + 中文系统时会整页中文）
 {
-  const env = makeEnv(undefined, undefined, undefined, undefined, 'en-US')
+  const env = makeEnv(BEEP_SEED, undefined, undefined, undefined, 'en-US')
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   ok(byText(page, 'Sound alerts') !== undefined, 'locale=en 时标题为英文（Sound alerts）')
   ok(byText(page, 'Browser sound') !== undefined, 'locale=en 时 chip 文案为英文')
@@ -581,7 +599,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(reg.options.label() === 'Sound Alerts', 'locale=en 时分区 label 返回英文 Sound Alerts')
   ok(reg.options.id === 'chime-alerts', 'locale=en 时分区 id 仍是 chime-alerts')
   // v0.5.10：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
-  ok(byText(page, 'Static build v0.5.10') !== undefined, 'locale=en 时版本标注为英文')
+  ok(byText(page, 'Static build v0.6.0') !== undefined, 'locale=en 时版本标注为英文')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
@@ -603,39 +621,132 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
     return nameOf(k)
   }
   const hostChip = page.find((n) => n.type === 'button' && n.props && n.props['data-chip'] === 'hostBeep')
-  ok(hostChip !== undefined && typeof hostChip.props.onClick === 'function', '宿主蜂鸣开关可点击')
+  ok(hostChip !== undefined && typeof hostChip.props.onClick === 'function', '宿主提醒开关可点击')
   const before = calls.length
   hostChip.props.onClick()
-  ok(calls.length > before && calls.slice(before).some((c) => c.url.indexOf('/sysset') >= 0), '切换后写宿主设置（/sysset）')
+  // v0.6.0：开启前先弹确认（默认全关 + Windows 会隐藏调用 PowerShell）
+  const page2 = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const modal = page2.find((n) => n.type === 'div' && n.props && n.props.className === 'snd-modal')
+  ok(modal !== undefined, '开启宿主提醒先弹确认框')
+  ok(calls.slice(before).every((c) => c.url.indexOf('/sysset') < 0), '未确认前不写宿主设置（不触发任何宿主动作）')
+  const confirmBtn = page2.find((n) => n.type === 'button' && n.props && n.props['data-act'] === 'host-enable')
+  ok(confirmBtn !== undefined, '确认框有「开启」按钮')
+  // 文案要求：设置界面不出现实现细节（PowerShell），只说「可能被安全软件拦截 / 信任则放行」
+  const modalText = JSON.stringify(modal)
+  ok(modalText.indexOf('信任') >= 0 && modalText.indexOf('放行') >= 0, '弹窗文案说明「信任则允许放行」')
+  ok(modalText.indexOf('PowerShell') < 0, '弹窗文案不出现 PowerShell 等实现细节')
+  confirmBtn.props.onClick()
+  const written = calls.slice(before).filter((c) => c.url.indexOf('/sysset') >= 0).map((c) => String(c.opts.body))
+  ok(written.length > 0, '确认后写宿主设置（/sysset）')
+  ok(written.some((b) => b.indexOf('"hostBeep":true') >= 0), '确认后写 hostBeep=true')
+  const modesBody = written.find((b) => b.indexOf('eventModes') >= 0)
+  ok(modesBody !== undefined, '确认时把每事件三选一显式写进宿主')
+  let allOff = true
+  try {
+    const modes = JSON.parse(modesBody).eventModes
+    const keys = Object.keys(modes)
+    allOff = keys.length === 10 && keys.every((k) => modes[k] === 'off')
+  } catch (err) { allOff = false }
+  ok(allOff, '写入的 10 个事件全部是「关」（默认不启用）')
 }
 
-// 9c. v0.5.5：宿主蜂鸣开启时每事件展开「宿主音」行（下拉/单独静音/宿主试听）+ 版本标注
+// 9c. v0.6.0：宿主提醒改为每事件三选一（关 / 响铃 / 通知），选中后才出现详情行
 {
   const env = makeEnv(undefined, undefined, (u) => {
-    if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, platform: 'win32', capBeep: true }) })
+    if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, eventModes: {}, notifyLevels: {}, platform: 'win32', capBeep: true, capNotify: true }) })
     return null
   })
   const calls = env.fetchCalls
   await new Promise((r) => setTimeout(r, 10))
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
-  const hostRows = page.filter((n) => n.type === 'div' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostrow') >= 0)
-  ok(hostRows.length === 10, '宿主蜂鸣开启时展开 10 行宿主音')
+  const textOf = (x) => {
+    if (x === null || x === undefined) return ''
+    if (typeof x === 'string') return x
+    if (Array.isArray(x)) return x.map((c) => textOf(c)).join('')
+    if (typeof x.type === 'function') return textOf(x.type(x.props))
+    const k = x.props && x.props.children !== undefined ? x.props.children : x.children
+    return textOf(k)
+  }
+  const segs = page.filter((n) => n.type === 'div' && n.props && n.props.className === 'snd-seg')
+  ok(segs.length === 10, '宿主提醒：每个事件一个三选一')
+  const segBtns = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-seg-btn') >= 0)
+  ok(segBtns.length === 30, '三选一每格都是按钮（10 × 3）')
+  // 旧配置（hostBeep=true 且 eventModes 为空）→ 按 hostMuted 还原成「响铃」，
+  // 也就是老用户升级后仍然响；新装用户走默认全关（见 9f）。
   const hostSelects = page.filter((n) => n.type === 'select' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-host-select') >= 0)
-  ok(hostSelects.length === 10, '每行一个宿主音下拉')
-  const hostMutes = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0)
-  ok(hostMutes.length === 10, '每行一个宿主静音键')
+  ok(hostSelects.length === 10, '旧配置还原成响铃：每个事件都有宿主音下拉（10 个）')
   const hostPreviews = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostpreview') >= 0)
-  ok(hostPreviews.length === 10, '每行一个宿主试听按钮')
+  ok(hostPreviews.length === 10, '旧配置还原成响铃：每个事件都有试听按钮（10 个）')
+  const notifyBtns = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostnotify') >= 0)
+  ok(notifyBtns.length === 0, '默认没有通知态事件 → 没有测试按钮（默认全关，通知要手动选）')
+  // 宿主里只有部分事件有记录时，载入后要把它校正成界面所见——否则宿主按「没记录=响铃」
+  // 的兜底在后台响，而界面显示「关」（用户机器上真实踩到过）
+  const reconcile = calls.filter((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('eventModes') >= 0)
+  ok(reconcile.length > 0, '载入后把宿主模式校正成界面所见（旧配置只有部分 eventModes）')
+  const recBody = reconcile.length > 0 ? String(reconcile[0].opts.body) : ''
+  let recModes = null
+  try { recModes = JSON.parse(recBody).eventModes } catch (err) {}
+  ok(recModes !== null && Object.keys(recModes).length === 10 && Object.values(recModes).every((v) => v === 'beep'), '校正写入 10 个事件（旧配置按 hostMuted 还原为响铃）')
+  // 「响铃」那一格点到「通知」→ 写 eventModes，并出现等级 + 测试
+  const notifySegBtn = segBtns.find((b) => textOf(b) === '通知' && b.props.className.indexOf('on') < 0)
+  const beforeSeg = calls.length
+  notifySegBtn.props.onClick()
+  ok(calls.length > beforeSeg && calls.slice(beforeSeg).some((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('eventModes') >= 0), '三选一切换写宿主（sysset eventModes）')
+  const page2 = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const testBtn = page2.find((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostnotify') >= 0)
+  ok(testBtn !== undefined, '选中「通知」后才出现测试按钮')
   const before = calls.length
   hostSelects[0].props.onChange({ target: { value: 'Windows Error.wav' } })
   ok(calls.length > before && calls.slice(before).some((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('Windows Error.wav') >= 0), '宿主音选择写宿主（sysset hostSounds）')
-  const before2 = calls.length
-  hostMutes[1].props.onClick()
-  ok(calls.length > before2 && calls.slice(before2).some((c) => c.url.indexOf('/sysset') >= 0 && String(c.opts.body).indexOf('hostMuted') >= 0), '宿主静音键写宿主（sysset hostMuted）')
   const before3 = calls.length
-  hostPreviews[2].props.onClick()
+  hostPreviews[0].props.onClick()
   ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
-  ok(byText(page, '静态版 v0.5.10') !== undefined, '设置页底部标注版本 v0.5.10')
+  const before4 = calls.length
+  testBtn.props.onClick()
+  ok(calls.length > before4 && calls.slice(before4).some((c) => c.url.indexOf('/sysnotify') >= 0), '测试通知调 /sysnotify')
+  ok(byText(page, '静态版 v0.6.0') !== undefined, '设置页底部标注版本 v0.6.0')
+}
+
+// 9f. v0.6.0：默认全关 —— 新装用户打开设置页时没有任何宿主提醒动作，也不会碰 PowerShell。
+{
+  const env = makeEnv()
+  await new Promise((r) => setTimeout(r, 10))
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const segs = page.filter((n) => n.type === 'div' && n.props && n.props.className === 'snd-seg')
+  ok(segs.length === 0, '宿主提醒默认关 → 不渲染三选一')
+  const onSegs = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-seg-btn on') >= 0)
+  ok(onSegs.length === 0, '没有任何事件默认处于响铃/通知态')
+  ok(page.some((n) => n !== null && n.children !== undefined && typeof n.children[0] === 'string' && n.children[0].indexOf('0 / 10 个事件会提醒') === 0), '标题卡片副标题沿用 0.5.10 文案（N / 10 个事件会提醒）')
+}
+
+// 9e. 0.6.0 修正：「试听这个网页音」只出声、不弹通知，也不受「网页响铃」通道开关限制。
+// 回归 0.6.0 首版的两个误接：①试听按三选一分发 → 通知模式点试听弹浏览器通知；
+// ②试听受 webBeep 通道开关影响 → 通道关着时点试听毫无反应。
+{
+  const env = makeEnv(
+    {
+      master: true,
+      webBeep: false,
+      notifyEnabled: true,
+      muted: [],
+      kinds: { complete: { enabled: true, mode: 'notify', level: 'important', sound: 'default', volume: 0.6 } }
+    },
+    undefined,
+    (u) => {
+      if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, eventModes: { complete: 'notify' }, notifyLevels: { complete: 'important' }, platform: 'win32', capBeep: true, capNotify: true }) })
+      return null
+    }
+  )
+  await new Promise((r) => setTimeout(r, 10))
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const playBtns = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className === 'snd-ib play')
+  ok(playBtns.length === 10, '每个事件都有网页音试听键（10 个）')
+  const beforeOsc = env.oscs.length
+  const beforeNotif = env.notifications.length
+  playBtns[0].props.onClick()
+  await new Promise((r) => setTimeout(r, 10))
+  ok(env.oscs.length > beforeOsc, '通知模式的事件点试听仍然出声（网页响铃通道关着也出声）')
+  ok(env.notifications.length === beforeNotif, '通知模式的事件点试听不弹浏览器通知')
 }
 
 // 9d. v0.5.6：useVersion 必须函数式更新（setState(x => x + 1)）。闭包捕获初值
@@ -657,7 +768,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 10. 网页通知触发（v0.5.8：改由宿主事件端点驱动）
 {
-  const env = makeEnv()
+  const env = makeEnv({ kinds: { approval: { mode: 'notify' } } })
   env.setWorkspaces([{ workspaceId: 'w1', title: 'K230', sessionIds: ['s1'] }])
   let seq = 0
   let batch = []
@@ -713,7 +824,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 同步查 state 后直接 return null，于是「页面加载后第一响」与「标签页从后台/睡眠
 // 恢复后第一响」都被吞掉——而人不在标签页时恰恰最需要出声。
 {
-  const env = makeEnv(undefined, undefined, undefined, (oscs) => class {
+  const env = makeEnv(BEEP_SEED, undefined, undefined, (oscs) => class {
     constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {}; this.listeners = {} }
     addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn) }
     // 真实浏览器里 resume() 是异步兑现的：这里用微任务模拟，落地后才变 running
@@ -739,7 +850,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 先排队，等首次用户手势解锁后补响。
 {
   let allowResume = false
-  const env = makeEnv(undefined, undefined, undefined, (oscs) => class {
+  const env = makeEnv(BEEP_SEED, undefined, undefined, (oscs) => class {
     constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {} }
     resume() { return Promise.resolve().then(() => { if (allowResume) this.state = 'running' }) }
     createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; oscs.push(o); return o }
@@ -762,7 +873,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 13c. 陈到没有意义的排队提示音不再补响（避免解锁瞬间炸出一串早已无关的旧音）
 {
   let allowResume = false
-  const env = makeEnv(undefined, undefined, undefined, (oscs) => class {
+  const env = makeEnv(BEEP_SEED, undefined, undefined, (oscs) => class {
     constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {} }
     resume() { return Promise.resolve().then(() => { if (allowResume) this.state = 'running' }) }
     createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; oscs.push(o); return o }
@@ -788,7 +899,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 用户正在等的那一声就静默消失（既无日志也无兜底）。这里钉住「绝不静默丢弃最新一条」。
 {
   let allowResume = false
-  const env = makeEnv(undefined, undefined, undefined, (oscs) => class {
+  const env = makeEnv(BEEP_SEED, undefined, undefined, (oscs) => class {
     constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {} }
     resume() { return Promise.resolve().then(() => { if (allowResume) this.state = 'running' }) }
     createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; oscs.push(o); return o }
@@ -814,7 +925,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 两个提示音碰在一起就同刻叠加、峰值 >1.0 硬削波（用户报告的「爆音」）。
 {
   const log = []
-  const env = makeEnv(undefined, undefined, undefined, () => class {
+  const env = makeEnv(BEEP_SEED, undefined, undefined, () => class {
     constructor() { this.state = 'running'; this.currentTime = 0; this.destination = { kind: 'destination' } }
     createGain() {
       return {
@@ -865,7 +976,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const tA = Math.min.apply(null, startsA)
 
   const mark = log.length
-  batch = [{ seq: 3, kind: 'question', sessionId: 's1', at: Date.now() }]
+  batch = [{ seq: 3, kind: 'jobdone', sessionId: 's1', at: Date.now() }]
   env.runIntervals()
   await flush()
   const startsB = log.slice(mark).filter((e) => e.from === 'osc').map((e) => e.t)
@@ -884,7 +995,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 // 于是任何一次瞬时失败都会让 approval/question/planreview/jobdone/jobfail
 // 全部静默到刷新页面——「有些时候不会出声」的随机性来源之一。
 {
-  const env = makeEnv()
+  const env = makeEnv(BEEP_SEED)
   let failing = false
   let seq = 0
   const events = []
@@ -962,11 +1073,83 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
       tag: 'div', className: 'navCell', children: [{ tag: 'svg' }, { tag: 'span', text: 'Sound Alerts' }],
     }],
   })
-  const env = makeEnv(undefined, undefined, undefined, undefined, 'en-US')
+  const env = makeEnv(BEEP_SEED, undefined, undefined, undefined, 'en-US')
   env.runIntervals()
   const row = dom.findAll('.navCell')[0]
   ok(row !== undefined && row.getAttribute('data-chime-nav') === '1', '英文界面按 Sound Alerts 定位到导航行')
   dom.restore()
+}
+
+// 15c. 打开页面时不得补响宿主积压事件（并发轮询竞态）
+// 真机症状：关掉页面一段时间再打开，网页合成音"一股脑全响"。
+// 成因：/sysget 慢时，1500ms 定时器先发出一次 after=0 的轮询，随后 loadHostBeep 的链式请求
+// 又发出第二次 after=0。先落地的那次走 boot 分支只对齐游标（正确），后落地的那次
+// 却带着完整积压事件列表，而此时 primed 已为 true → 全部 fire()。
+{
+  const backlog = [1, 2, 3, 4, 5].map((seq) => ({ seq, kind: 'jobdone', sessionId: 's1', at: 0 }))
+  let eventsCalls = 0
+  const env = makeEnv(undefined, undefined, (url) => {
+    if (url.indexOf('/sysget') >= 0) {
+      // 首屏慢：让定时器那次轮询先发出去
+      return new Promise((res) => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: false, capBeep: true }) }), 150))
+    }
+    if (url.indexOf('/events') >= 0) {
+      eventsCalls += 1
+      const delay = eventsCalls === 1 ? 400 : 0
+      return new Promise((res) => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ ok: true, boot: 'b1', seq: 5, events: backlog }) }), delay))
+    }
+    return null
+  })
+  env.runIntervals()   // 轮询 A：after=0，响应慢
+  await new Promise((r) => setTimeout(r, 220))  // /sysget 回来 → 轮询 B：after=0，响应快，先落地并完成对齐
+  await new Promise((r) => setTimeout(r, 450))  // 轮询 A 后落地
+  ok(env.oscs.length === 0, '打开页面不补响宿主积压事件（并发轮询竞态）')
+}
+
+// 17. v0.6.0：提醒方式（关 / 响铃 / 通知）决定走哪个通道。
+// 注意：complete 已经不再由快照自检（v0.5.8 起由宿主 /events 转发），因此用 /events 驱动。
+async function driveHostEvent (seed, kind) {
+  const env = makeEnv(seed)
+  let seq = 0
+  let batch = []
+  env.overrideFetch((u) => {
+    if (u.indexOf('/events') >= 0) {
+      seq += 1
+      const body = { ok: true, boot: 'b', seq: seq - 1, events: batch }
+      batch = []
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(body) })
+    }
+    return null
+  })
+  env.runIntervals()
+  await flush()
+  batch = [{ seq: seq + 1, kind, sessionId: 's1', at: Date.now() }]
+  env.runIntervals()
+  await flush()
+  return env
+}
+{
+  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'notify', level: 'important' } } }, 'complete')
+  ok(env.notifications.length === 1, '通知模式：事件弹一条通知')
+  ok(env.oscs.length === 0, '通知模式：不播放网页提示音')
+  ok(env.notifications[0] && env.notifications[0].opts.requireInteraction === true, '重要等级带 requireInteraction')
+}
+{
+  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'off' } } }, 'complete')
+  ok(env.oscs.length === 0 && env.notifications.length === 0, '关模式：既不出声也不弹通知')
+}
+{
+  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'beep' } } }, 'complete')
+  ok(env.oscs.length > 0, '响铃模式：播放网页提示音')
+  ok(env.notifications.length === 0, '响铃模式：不弹通知')
+}
+{
+  const env = await driveHostEvent({ kinds: { complete: { enabled: true } }, hostMuted: { complete: true } }, 'complete')
+  ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件按关处理')
+}
+{
+  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'notify', level: 'silent' } } }, 'complete')
+  ok(env.notifications.length === 1 && env.notifications[0].opts.silent === true, '静默等级：silent=true')
 }
 
 if (failures === 0) console.log('all client-web tests passed')

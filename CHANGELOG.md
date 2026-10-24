@@ -1,5 +1,33 @@
 # 更新日志
 
+## v0.6.0
+
+**每个事件从「开关」升级为「三选一 + 明细」：关 / 响铃 / 通知**；宿主侧第一次有了真正的系统通知（Windows toast），设置页按 DSH 的控件尺寸与视觉重做。
+
+- **宿主通知（新增，跨平台）**：`notify` 模式的事件由宿主弹系统通知——Windows 走 PowerShell + WinRT `ToastNotificationManager`（Node 不能直接调 WinRT，只能借 `powershell.exe` 当桥：`-WindowStyle Hidden`，临时 `.ps1` 跑完自删，与 vbs 蜂鸣同一套「写脚本 → spawn → 自删」形态，避开命令行引号地狱）；macOS 走系统内置的 `osascript display notification`；Linux 走 `notify-send`（libnotify）。等级三档：`silent` / `normal` / `important`——Windows 分别 `<audio silent="true"/>` / 系统默认音 / `scenario="urgent"` + `Notification.Reminder`，Linux 映射 `-u low|normal|critical`，macOS 静默不带提示音、其余带一声 Glass。能力探测失败（对应命令不在 PATH、或火绒拦「隐藏执行 PowerShell」）时 `sysget` 回 `capNotify: false`，设置页把「测试」按钮置灰并静默降级，不影响响铃与其他功能。
+- **toast 归属与编码**：通知标题栏显示的是 **AUMID 对应的应用名**，与脚本语言无关——优先借 DSH 自己的 AUMID（`electron.app.DeepSeek Harness`，头部显示「DeepSeek Harness」），运行时用 `CreateToastNotifier(...).Setting` 判它是否注册，未注册（DSH 改名、绿色版）自动回退到 PowerShell 自带的 AUMID。`.ps1` 一律带 **UTF-8 BOM**：PowerShell 5.1 对无 BOM 的脚本按系统 ANSI 解析，中文标题会变成「浠诲姟瀹屾垚」这类乱码。
+- **每事件模式与等级**：`settings.json` 新增 `eventModes` / `notifyLevels`；`hostMuted` 保留为**派生兼容字段**（mode=off ⇔ hostMuted=true），旧客户端读写它仍有效。**默认一律「关」**：宿主提醒要先在设置里显式开启，再逐个事件选「响铃」或「通知」。旧配置（只有 `hostBeep` + `hostMuted`）按「静音过 → 关，其余 → 响铃」还原，老用户升级不丢原来的响铃。
+- **端点**：新增 `/dsh-chime-alerts/sysnotify`（POST `{kind, level}`，设置页「测试」按钮）与动态半 `sysnotify` handler；`sysget` 增加 `eventModes` / `notifyLevels` / `capNotify`；`sysset` 接受这三个新字段并同步维护 `hostMuted`。
+- **设置页重做（静态版）**：
+  - 卡片改**单列行式布局**：标签在左、控件靠右且限宽 238px；音量条常驻、与下拉同宽右对齐。
+  - **宿主提醒 = 三选一分段控件**（关 / 响铃 / 通知），选中后才出现详情行：响铃 → 「宿主音 + 试听」，通知 → 「通知等级 + 测试」。原来的**宿主静音键删掉**（三选一的「关」就是静音）。
+  - 控件尺度对齐 DSH：控件 30px 高 / 圆角 8 / 字号 13；开关改 DSH 单色高对比（36×20，开 = 黑白反相、关 = 灰轨道 + 浅灰滑块）；chip 状态点改绿色（`#22c55e`，仅开启态）；hero 去掉渐变；底部说明改为「总开关 / 每个事件 / 详情」三行。
+  - **下拉弹层自绘**：用 Chromium 135+ 的可定制 select（`appearance: base-select` + `::picker(select)`）画出 DSH 风格弹层（圆角 10、内边距 3、行高 28、选中项右侧 ✓、宽度对齐按钮、悬浮反馈）；不支持的内核整段不生效，退化为原生弹层 + `color-scheme` + `option` 上色兜底（修掉深色下白底白字）。
+  - 所有可点控件加悬浮反馈（多选 chip 除外，它是状态显示）。
+- **动态版同步对齐**：`lib/client.js` 的设置页、store 模型与通道分发与静态版一致（三选一 / 通知等级 / 自绘下拉 / 单色开关 / 行式布局），宿主交互走 `harness.call('sysset'|'sysnotify')`；旧配置里只有 `hostMuted` 时按「关」迁移（两侧客户端都读）。
+- **发布前实机修正（三处）**：
+  - 静态半漏注册 `/dsh-chime-alerts/sysnotify` 路由（只有动态桥有 handler）：静态版点「测试」POST 到不存在的路径，服务器回 405，界面上就是「点了没反应」。补齐端点，并把当前等级一起带上，试发的通知忠实反映静默 / 普通 / 重要。
+  - 「试听这个网页音」被误接成按三选一分发：通知模式的事件点试听会**弹通知**而不是出声，且仍受「网页响铃」通道开关限制（通道关着时点了没反应）。现在试听只放该事件的网页音，与模式和通道开关无关；浏览器通知授权改到选中「通知」那一刻申请。
+  - 通知的归属名与乱码：首版借 PowerShell 自己的 AUMID，通知标题栏写着「Windows PowerShell」；临时 `.ps1` 没写 BOM，中文标题在 PowerShell 5.1 下变乱码。现在借 DSH 的 AUMID + 写 BOM，正文去掉重复的应用名；同时按平台补齐 macOS / Linux 的通知实现（此前这两个平台选「通知」是静默无效的）。
+- **宿主通知默认不启用 + 风险提示**：Windows 的 toast 要隐藏调用 PowerShell（Node 不能直接调 WinRT），火绒一类杀软会把「隐藏运行 PowerShell」判为可疑并弹窗。因此：
+  - 所有事件默认「关」，开箱不碰任何宿主动作；
+  - 打开「宿主提醒」时先弹确认框，写明「每事件默认关」「Windows 会调 PowerShell、可能被杀软拦」「macOS / Linux 不受影响」，确认后才开启，并把 10 个事件的三选一**全量写实**（默认全关），避免宿主按旧默认值偷偷响；
+  - Windows 下选中「通知」时，等级行下面还有一行常驻小字提示；
+  - **设置界面不写实现细节**：弹窗与小字只说「可能被安全软件拦截，如您信任本插件请允许放行一次」，不提 PowerShell（技术细节留在 README 与源码注释里）；标题卡片副标题沿回 0.5.10 的「N / 10 个事件会提醒」；
+  - README 顶部加 ⚠️ 区块说明默认关闭、杀软风险与「零 PowerShell」的做法（只用响铃 / 关掉宿主提醒）；
+  - 不引入任何预编译二进制、不加 postinstall 编译步骤（社区插件站的安全扫描会拒「只有二进制」的插件，也把 postinstall 视为供应链风险）。
+- **宿主侧模式校准**：载入设置时把宿主里没有记录的事件写实成界面所见——宿主对未记录事件有「响铃」兜底，否则会出现「界面显示关、后台却在响」。老配置（只有 `hostBeep` + `hostMuted`）按「静音过 → 关，其余 → 响铃」还原。`n- 版本号 `0.6.0`；测试 **425** 项（宿主 168 / 动态客户端 135 / 静态客户端 122）。
+
 ## v0.5.10
 
 > `0.5.9` 未对外发布：打完内部标签后，在同一轮实机核对里又发现「导航项图标退回外壳默认齿轮」与「动态版一批 `const` 赋值导致工作区标记 / 语言绑定静默失效」两个问题，修完后直接并入本版，`v0.5.9` 标签已删除，避免留下一个没有对应发布的版本号。

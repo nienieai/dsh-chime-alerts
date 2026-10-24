@@ -5,7 +5,24 @@ import { readFileSync } from 'node:fs'
 import { installFakeDom } from './fake-dom.mjs'
 
 const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
-
+// v0.6.0：每个事件默认「关」。需要出声的用例显式种下 beep；makeEnv 会给种子里
+// 没写 mode 的事件补 'beep'（见其注释），所以这里只列事件名。
+const BEEP_SEED = {
+  kinds: {
+    complete: { mode: 'beep' },
+    subcomplete: { enabled: true, mode: 'beep' },
+    jobdone: { mode: 'beep' },
+    jobfail: { mode: 'beep' },
+    interrupt: { mode: 'beep' },
+    approval: { mode: 'beep' },
+    pluginapproval: { mode: 'beep' },
+    question: { mode: 'beep' },
+    planreview: { mode: 'beep' },
+    goalblocked: { mode: 'beep' }
+  }
+}
+// 需要「通知」态（桌面通知）的用例用它
+const NOTIFY_SEED = { kinds: { approval: { mode: 'notify' }, question: { mode: 'notify' } } }
 let failures = 0
 const ok = (cond, label) => {
   if (cond) console.log('PASS', label)
@@ -15,7 +32,18 @@ const ok = (cond, label) => {
 function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], oldLegacyLocal = undefined, sysgetRes = { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, loadallRes = { ok: true, list: [] }, loadaudioRes = { ok: false }, opts = {}) {
   // 浏览器全局假体（每个场景独立）
   const storage = new Map()
-  if (seedLocal !== undefined) storage.set('dsh-chime-alerts-v1', JSON.stringify(seedLocal))
+  if (seedLocal !== undefined) {
+    // v0.6.0：种子里的 kind 没写 mode 时补 beep（老用例都是按「响铃」写的）
+    const seed = JSON.parse(JSON.stringify(seedLocal))
+    if (seed && seed.kinds) {
+      const kindKeys = Object.keys(seed.kinds)
+      for (let i = 0; i < kindKeys.length; i++) {
+        const k = seed.kinds[kindKeys[i]]
+        if (k && typeof k === 'object' && typeof k.mode !== 'string') k.mode = 'beep'
+      }
+    }
+    storage.set('dsh-chime-alerts-v1', JSON.stringify(seed))
+  }
   if (legacyLocal !== undefined) storage.set('dsh-chime-v1', JSON.stringify(legacyLocal))
   if (oldLegacyLocal !== undefined) storage.set('dsh-sound-alerts-v1', JSON.stringify(oldLegacyLocal))
   const oscs = []
@@ -124,7 +152,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 2. 完成事件 → 播放合成音（v0.3.15 四音符，基音 + 泛音）
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
   await settle()
   ok(env.oscs.length === 8, 'complete 合成音产生 8 个振荡器（4 音符 × 基音+泛音）')
@@ -135,7 +163,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 2c. v0.3.17/18：每个音符时值/间隔可以不同（complete 尾音明显更长）
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
   await settle()
   const decays = env.gainRamps.filter(([v]) => v < 0.001).map(([, t]) => t)
@@ -144,23 +172,23 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 2d. v0.3.18/19：音量变化（complete 渐强）、音色变化（第三音 triangle）、后台/子任务低调
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.tick()
   await settle()
   const peaks = env.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
   ok(peaks.length === 4 && peaks[0] < peaks[1] && peaks[1] < peaks[2] && peaks[2] < peaks[3], 'complete 渐强（每音音量不同）')
   ok(env.oscs[4] && env.oscs[4].type === 'triangle', '音色变化（第三音 triangle）')
-  const jd = makeEnv(undefined, undefined, [{ seq: 1, kind: 'jobdone', at: Date.now() }])
+  const jd = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'jobdone', at: Date.now() }])
   jd.tick()
   await settle()
   const jp = jd.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
   ok(jp.length === 3 && jp.every((p) => p < 0.5) && jp[0] > jp[1] && jp[1] > jp[2], 'jobdone 后台低调且渐弱（<0.5）')
-  const jf = makeEnv(undefined, undefined, [{ seq: 1, kind: 'jobfail', at: Date.now() }])
+  const jf = makeEnv({ kinds: { jobfail: { enabled: true, mode: 'beep', sound: 'default', volume: 1 } } }, undefined, [{ seq: 1, kind: 'jobfail', at: Date.now() }])
   jf.tick()
   await settle()
   const fp = jf.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
   ok(fp.length === 3 && fp.every((p) => p < 0.5), 'jobfail 后台低调（<0.5）')
-  const sub = makeEnv({ kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } }, undefined, [{ seq: 1, kind: 'subcomplete', at: Date.now() }])
+  const sub = makeEnv({ kinds: { subcomplete: { enabled: true, mode: 'beep', sound: 'default', volume: 1 } } }, undefined, [{ seq: 1, kind: 'subcomplete', at: Date.now() }])
   sub.tick()
   await settle()
   const sp = sub.gainRamps.filter(([v]) => v > 0.1).map(([v]) => v)
@@ -171,7 +199,9 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 {
   const env = makeEnv()
   const freqOf = async (kind) => {
-    const seed = kind === 'subcomplete' ? { kinds: { subcomplete: { enabled: true, sound: 'default', volume: 1 } } } : undefined
+    // v0.6.0：这些用例测音型，必须走响铃通道
+    const seed = { kinds: {} }
+    seed.kinds[kind] = { enabled: true, mode: 'beep', sound: 'default', volume: 1 }
     const e2 = makeEnv(seed, undefined, [{ seq: 1, kind, at: Date.now() }])
     e2.tick()
     await settle()
@@ -199,7 +229,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 3. 子任务音默认关闭 → 不播放
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'subcomplete', at: Date.now() }])
+  const env = makeEnv({ kinds: { subcomplete: { mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'subcomplete', at: Date.now() }])
   env.tick()
   await settle()
   ok(env.oscs.length === 0, 'subcomplete 默认关闭不响')
@@ -221,7 +251,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 5b. 更老键 dsh-sound-alerts-v1 也迁移到新键
 {
-  const env = makeEnv(undefined, undefined, [], [], { master: false, scope: 'all', sysMode: 'auto', kinds: {} })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], { master: false, scope: 'all', sysMode: 'auto', kinds: {} })
   ok(env.storage.has('dsh-chime-alerts-v1'), '老老键 dsh-sound-alerts-v1 迁移到 dsh-chime-alerts-v1')
 }
 
@@ -261,7 +291,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 7. 播放失败不触发系统蜂鸣（双开关独立，不再自动兜底）
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   globalThis.window.AudioContext = undefined
   env.tick()
   await settle()
@@ -280,7 +310,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 8b. 未静音工作区的事件正常播放
 {
-  const env = makeEnv(undefined, undefined,
+  const env = makeEnv(BEEP_SEED, undefined,
     [{ seq: 1, kind: 'complete', sessionId: 's1', at: Date.now() }],
     [{ workspaceId: 'K230', title: 'K230', sessionIds: ['s1'] }])
   env.tick()
@@ -290,7 +320,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 8c. 工作区映射不到的会话照常响（防御）
 {
-  const env = makeEnv({ muted: ['K230'] }, undefined,
+  const env = makeEnv({ muted: ['K230'], kinds: { complete: { mode: 'beep' } } }, undefined,
     [{ seq: 1, kind: 'complete', sessionId: 'unknown', at: Date.now() }],
     [{ workspaceId: 'K230', title: 'K230', sessionIds: ['s1'] }])
   env.tick()
@@ -300,7 +330,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 8d. muted 旧格式（工作区标题）自动迁移为 workspaceId
 {
-  const env = makeEnv({ muted: ['K230 工作区'] }, undefined,
+  const env = makeEnv({ muted: ['K230 工作区'], kinds: { complete: { mode: 'beep' } } }, undefined,
     [{ seq: 1, kind: 'complete', sessionId: 's1', at: Date.now() }],
     [{ workspaceId: 'ws1', title: 'K230 工作区', sessionIds: ['s1'] }])
   env.tick()
@@ -376,13 +406,21 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 9f. v0.3.20：宿主蜂鸣开启时每行追加第二行（宿主音下拉 + 宿主试听），浏览器/宿主试听分离
 {
-  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test' })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test' })
   await settle()
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   let page = render(comp())
-  ok(byText(page, '宿主音') !== undefined, '宿主蜂鸣开启时渲染宿主音行')
-  ok(page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostpreview') >= 0).length === 10, '每行一个宿主试听按钮')
-  ok(page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0).length === 10, '每行一个宿主音下拉')
+  ok(byText(page, '宿主提醒') !== undefined, '宿主提醒开启时渲染宿主行')
+  // v0.6.0：每事件一个三选一。旧配置（hostBeep=true 且没有 eventModes）按 hostMuted 还原成响铃，
+  ok(page.filter((n) => n.type === 'div' && n.props.className === 'snd-seg').length === 10, '每个事件一个三选一')
+  ok(page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostpreview') >= 0).length === 10, '旧配置还原成响铃：每个事件都有宿主试听（10 个）')
+  ok(page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0).length === 10, '旧配置还原成响铃：每个事件都有宿主音下拉（10 个）')
+  ok(page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostnotify') >= 0).length === 0, '默认没有通知态事件 → 没有测试按钮（通知要手动选）')
+  // 载入时把宿主侧没有记录的事件校正成界面所见（旧配置只剩部分 eventModes 时必须写实）
+  const reconcile = env.calls.filter(([m, a]) => m === 'sysset' && a && a.eventModes)
+  ok(reconcile.length > 0, '载入后把宿主模式校正成界面所见（旧配置只有部分 eventModes）')
+  const recModes = reconcile.length > 0 ? reconcile[0][1].eventModes : null
+  ok(recModes !== null && Object.keys(recModes).length === 10 && Object.values(recModes).every((v) => v === 'beep'), '校正写入 10 个事件（旧配置按 hostMuted 还原为响铃）')
   const hostPreview = page.find((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostpreview') >= 0)
   hostPreview.props.onClick()
   await settle()
@@ -406,12 +444,12 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 9g. v0.4.0：Linux 平台宿主音选项（freedesktop 主题音，不含 Windows wav）
 {
-  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'linux' })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'linux' })
   await settle()
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   const page = render(comp())
   const hostSelects = page.filter((n) => n.type === 'select' && n.props.className !== undefined && n.props.className.indexOf('snd-host-select') >= 0)
-  ok(hostSelects.length === 10, 'linux 每行一个宿主音下拉')
+  ok(hostSelects.length === 10, 'linux：旧配置还原成响铃 → 每个事件都有宿主音下拉（10 个）')
   const values = hostSelects[0].children.flat(2).filter((c) => c !== null && typeof c === 'object' && c.props && typeof c.props.value === 'string').map((c) => c.props.value)
   ok(values.indexOf('complete') >= 0 && values.indexOf('dialog-error') >= 0 && values.indexOf('bell') >= 0, 'linux 选项为 freedesktop 主题音')
   ok(values.indexOf('chimes.wav') < 0 && values.indexOf('Windows Error.wav') < 0, 'linux 选项不含 Windows wav')
@@ -423,7 +461,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 9h. v0.4.1：宿主响铃不支持（capBeep=false）时宿主蜂鸣相关控件禁用变灰
 {
-  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: false })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: false })
   await settle()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   const chips = page.filter((n) => n.type === 'button' && n.props['data-chip'] !== undefined)
@@ -440,7 +478,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 9i. v0.4.1：浏览器不支持 Notification 时桌面通知开关禁用
 {
-  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, undefined, undefined, { noNotification: true })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: false, dir: '/tmp/chime-test' }, undefined, undefined, { noNotification: true })
   await settle()
   const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
   const chips = page.filter((n) => n.type === 'button' && n.props['data-chip'] !== undefined)
@@ -450,28 +488,42 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(hostChip.props.disabled === undefined, '宿主蜂鸣 chip 不受影响（capBeep 未知不禁用）')
 }
 
-// 9j. v0.4.2：每事件宿主音独立静音键 + 开关改名「网页通知」
+// 9j. v0.6.0：宿主提醒改为每事件三选一（关 / 响铃 / 通知），去掉独立静音键
 {
-  const env = makeEnv(undefined, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true })
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
   await settle()
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   let page = render(comp())
   ok(byText(page, '网页通知') !== undefined, '开关改名为网页通知')
   ok(!page.some((n) => n.type === 'span' && n.children !== undefined && n.children.some((c) => String(c).indexOf('桌面通知') === 0)), '不再显示「桌面通知」')
-  const hostMutes = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0)
-  ok(hostMutes.length === 10, '每个事件的宿主行各 1 个独立静音键')
-  hostMutes[0].props.onClick()
+  ok(page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0).length === 0, '宿主静音键已删除（三选一的「关」即静音）')
+  const segBtns = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-seg-btn') >= 0)
+  ok(segBtns.length === 30, '三选一每格都是按钮（10 × 3）')
+  // 旧配置（hostBeep=true 且没有 eventModes）按 hostMuted 还原成「响铃」
+  const onBtns = segBtns.filter((b) => b.props.className.indexOf(' on') >= 0)
+  ok(onBtns.length === 10, '每个事件有一个选中格')
+  const notifyCount = onBtns.filter((b) => String(b.children[0]) === '通知').length
+  ok(notifyCount === 0, '默认没有事件处于「通知」态（通知必须手动选）')
+  // 点「关」→ 写 eventModes
+  const offBtn = segBtns.find((b) => String(b.children[0]) === '关')
+  const notifySeg = segBtns.find((b) => String(b.children[0]) === '通知')
+  notifySeg.props.onClick()
   await settle()
-  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostMuted && a.hostMuted.complete === true), '宿主静音键点击保存 hostMuted')
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.eventModes && a.eventModes.complete === 'notify'), '切到「通知」写 eventModes=notify')
+  const page2 = render(comp())
+  ok(page2.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostnotify') >= 0).length === 1, '选中「通知」后才出现测试按钮')
+  // 点「关」→ 写 eventModes=off
+  env.calls.length = 0
+  offBtn.props.onClick()
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.eventModes && a.eventModes.complete === 'off'), '切到「关」写 eventModes=off')
   page = render(comp())
-  const hostMutes2 = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostmute') >= 0)
-  ok(hostMutes2[0].props.className.indexOf(' off') >= 0, '宿主静音键显示静音态')
-  ok(page.filter((c) => c.type === 'div' && (c.props.className === 'snd-row' || c.props.className === 'snd-row off')).length === 10, '事件卡片仍在（未被静音键影响）')
+  ok(page.filter((c) => c.type === 'div' && (c.props.className === 'snd-row' || c.props.className === 'snd-row off')).length === 10, '事件卡片仍在（未被三选一影响）')
 }
 
 // 9e. 多 tab 领导锁：其他 tab 是 leader 时本 tab 只消费不播放（防双响）
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
   env.storage.set('dsh-chime-alerts-leader', 'other-tab:' + (Date.now() + 60000))
   env.tick()
   await settle()
@@ -481,7 +533,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
 
 // 9f. 桌面通知：事件触发时弹系统通知（同类事件 tag 合并）
 {
-  const env = makeEnv(undefined, undefined, [{ seq: 1, kind: 'approval', at: Date.now() }])
+  const env = makeEnv(NOTIFY_SEED, undefined, [{ seq: 1, kind: 'approval', at: Date.now() }])
   env.tick()
   await settle()
   ok(env.notifications.length === 1 && env.notifications[0].opts.tag === 'dsh-chime-alerts:approval', '事件触发桌面通知（tag 合并同类）')
@@ -506,7 +558,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const origNav = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   Object.defineProperty(globalThis, 'navigator', { value: { language: 'en-US' }, configurable: true, writable: true })
   const env = makeEnv()
-  const env2 = makeEnv(undefined, undefined, [{ seq: 1, kind: 'approval', at: Date.now() }])
+  const env2 = makeEnv(NOTIFY_SEED, undefined, [{ seq: 1, kind: 'approval', at: Date.now() }])
   Object.defineProperty(globalThis, 'navigator', origNav)
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   const page = render(comp())
@@ -516,9 +568,9 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
     ok(reg.options.id === 'chime-alerts', '英文下分区 id 固定为 chime-alerts')
     ok(typeof reg.options.label === 'function', '分区 label 是 thunk')
-    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.10') === 0), '英文版本标注 Dynamic build v0.5.10')
+    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.6.0') === 0), '英文版本标注 Dynamic build v0.5.10')
   }
-  ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All muted')), '英文批量按钮 All muted')
+  ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All off')), '英文批量按钮 All off')
   const titles = page.filter((n) => n.props.className === 'snd-grp-name').map((n) => n.children[0])
   ok(titles.length === 3 && titles[0] === 'Primary notifications' && titles[2] === 'Human action needed', '英文分组标题')
   const customOpt = page.find((n) => n.type === 'option' && n.props.value === 'custom')
@@ -539,13 +591,27 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(page.some((n) => n.type === 'div' && n.props.className === 'snd-note' && n.children !== undefined && String(n.children[0]).indexOf('/tmp/chime-test') >= 0), '设置页显示本地存储位置')
   ok(page.filter((n) => n.type === 'button' && n.props['data-chip'] !== undefined).length === 3, '顶部三个 chip（网页响铃/网页通知/宿主蜂鸣）')
   ok(page.filter((n) => n.type === 'button' && n.props.role === 'switch').length === 11, '总开关 + 每事件开关（1 + 10）')
+  ok(page.some((n) => n.type === 'div' && n.children !== undefined && typeof n.children[0] === 'string' && n.children[0].indexOf('0 / 10 个事件会提醒') === 0), '标题卡片副标题沿用 0.5.10 文案（N / 10 个事件会提醒）')
 
-  // 12b. 宿主蜂鸣开关切换触发 sysset（写入宿主本地）
+  // 12b. 开启宿主提醒先弹确认框；确认后才写宿主（并把每事件三选一显式写实）
   const hostChipBtn = page.find((n) => n.type === 'button' && n.props['data-chip'] === 'hostBeep')
+  const beforeHost = env.calls.length
   hostChipBtn.props.onClick()
   await settle()
-  ok(env.calls.some(([m, a]) => m === 'sysset' && a.hostBeep === true), '宿主蜂鸣 chip 变更触发 sysset 写入宿主')
-
+  ok(env.calls.slice(beforeHost).every(([m]) => m !== 'sysset'), '未确认前不写宿主设置（不触发任何宿主动作）')
+  const modalPage = render(comp())
+  ok(modalPage.some((n) => n.type === 'div' && n.props.className === 'snd-modal'), '开启宿主提醒弹出确认框（提示 PowerShell / 杀软风险）')
+  const confirmBtn = modalPage.find((n) => n.type === 'button' && n.props['data-act'] === 'host-enable')
+  ok(confirmBtn !== undefined, '确认框有「开启」按钮')
+  // 文案要求：设置界面不出现实现细节（PowerShell），只说「可能被安全软件拦截 / 信任则放行」
+  const modalText = JSON.stringify(modalPage)
+  ok(modalText.indexOf('信任') >= 0 && modalText.indexOf('放行') >= 0, '弹窗文案说明「信任则允许放行」')
+  ok(modalText.indexOf('PowerShell') < 0, '弹窗文案不出现 PowerShell 等实现细节')
+  confirmBtn.props.onClick()
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.hostBeep === true), '确认后写 hostBeep=true')
+  const bulk = env.calls.filter(([m, a]) => m === 'sysset' && a && a.eventModes).pop()
+  ok(bulk !== undefined && Object.keys(bulk[1].eventModes).length === 10 && Object.values(bulk[1].eventModes).every((v) => v === 'off'), '确认时把 10 个事件全量写成「关」（默认不启用）')
   // 12c. 启动时从宿主读取 hostBeep（sysget）
   const env2 = makeEnv({ webBeep: false }, undefined, [], [], undefined, { ok: true, hostBeep: true, dir: '/tmp/chime2' })
   await settle()
@@ -589,6 +655,90 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(marks[0] !== undefined && marks[0].style.left === '241px', '标记贴在「…」按钮左侧（260-19=241）')
   ok(marks[0] !== undefined && marks[0].getAttribute('data-chime-ws-mark') === 'w1', '标记带工作区 id')
   dom.restore()
+}
+
+// 17. v0.6.0：提醒方式（关 / 响铃 / 通知）决定走哪个通道（动态版）
+{
+  const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'notify', level: 'important' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  ok(env.notifications.length === 1, '通知模式：事件弹一条浏览器通知')
+  ok(env.oscs.length === 0, '通知模式：不播放提示音')
+  ok(env.notifications[0].opts.requireInteraction === true, '重要等级带 requireInteraction')
+}
+{
+  const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'notify', level: 'silent' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  ok(env.notifications.length === 1 && env.notifications[0].opts.silent === true, '静默等级：silent=true')
+}
+{
+  const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'off' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  ok(env.oscs.length === 0 && env.notifications.length === 0, '关模式：既不出声也不弹通知')
+}
+{
+  const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  env.tick()
+  await settle()
+  ok(env.oscs.length > 0, '响铃模式：播放提示音')
+  ok(env.notifications.length === 0, '响铃模式：不弹通知')
+}
+{
+  // 旧设置迁移：没有 mode 时，hostMuted 里静音过的事件按「关」处理
+  const env = makeEnv(BEEP_SEED, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, hostMuted: { complete: true }, dir: '/tmp/chime-test', platform: 'win32', capBeep: true })
+  env.tick()
+  await settle()
+  ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件按关处理')
+}
+{
+  // 「测试」按钮走宿主 sysnotify
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'notify' }, notifyLevels: { complete: 'normal' }, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  const page = render(comp())
+  const testBtn = page.find((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-hostnotify') >= 0)
+  ok(testBtn !== undefined, '通知态事件渲染测试按钮')
+  env.calls.length = 0
+  testBtn.props.onClick()
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysnotify' && a && a.kind === 'complete' && a.level === 'normal'), '测试按钮调宿主 sysnotify（带当前等级）')
+}
+{
+  // 0.6.0 修正：试听只出声、不弹通知，也不受「网页响铃」通道开关限制
+  const env = makeEnv(
+    { master: true, webBeep: false, notifyEnabled: true, muted: [], kinds: { complete: { enabled: true, mode: 'notify', level: 'important', sound: 'default', volume: 0.6 } } },
+    undefined,
+    [],
+    [],
+    undefined,
+    { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'notify' }, notifyLevels: { complete: 'important' }, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true }
+  )
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  const page = render(comp())
+  const playBtns = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className === 'snd-ib play')
+  ok(playBtns.length === 10, '动态版：每个事件都有网页音试听键（10 个）')
+  const beforeOsc = env.oscs.length
+  const beforeNotif = env.notifications.length
+  playBtns[0].props.onClick()
+  await settle()
+  ok(env.oscs.length > beforeOsc, '通知模式的事件点试听仍然出声（网页响铃通道关着也出声）')
+  ok(env.notifications.length === beforeNotif, '通知模式的事件点试听不弹浏览器通知')
+}
+{
+  // 通知等级下拉写宿主 notifyLevels
+  const env = makeEnv(BEEP_SEED, undefined, [], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'notify' }, notifyLevels: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
+  await settle()
+  const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
+  const page = render(comp())
+  const levelSel = page.filter((n) => n.type === 'select').find((n) => (n.children || []).flat(2).some((c) => c && c.props && c.props.value === 'important'))
+  ok(levelSel !== undefined, '通知态事件渲染等级下拉')
+  env.calls.length = 0
+  levelSel.props.onChange({ target: { value: 'important' } })
+  await settle()
+  ok(env.calls.some(([m, a]) => m === 'sysset' && a && a.notifyLevels && a.notifyLevels.complete === 'important'), '等级选择写宿主（sysset notifyLevels）')
 }
 
 console.log(failures === 0 ? '\nall client tests passed' : `\n${failures} client test(s) FAILED`)

@@ -50,7 +50,11 @@ function makeEnv(opts = {}) {
             if (argv0 === 'sh') {
               const c = spOpts.argv[2] || ''
               if (c.indexOf('command -v') >= 0) {
-                const probeOk = c.indexOf('canberra-gtk-play') >= 0 ? (opts.canberraProbe !== false) : (opts.paplayProbe !== false)
+                let probeOk
+                if (c.indexOf('notify-send') >= 0) probeOk = opts.notifySendProbe !== false
+                else if (c.indexOf('osascript') >= 0) probeOk = opts.osascriptProbe !== false
+                else if (c.indexOf('canberra-gtk-play') >= 0) probeOk = opts.canberraProbe !== false
+                else probeOk = opts.paplayProbe !== false
                 return { done: Promise.resolve({ exitCode: probeOk ? 0 : 1 }), collected: {} }
               }
               if (c.indexOf('printf') >= 0) {
@@ -599,12 +603,13 @@ function sessionEventThreeArg(env, session, event) {
     webServerRegister: (route) => { routes.push(route); return () => {} },
   })
   await new Promise((r) => setTimeout(r, 30))
-  ok(routes.length === 4, '无 harness 时注册 sysget/sysset/sysbeep/events HTTP 端点')
+  ok(routes.length === 5, '无 harness 时注册 sysget/sysset/sysbeep/sysnotify/events HTTP 端点')
   const sysgetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysget')
   const syssetRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysset')
   const sysbeepRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysbeep')
+  const sysnotifyRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/sysnotify')
   const eventsRoute = routes.find((rt) => rt.path === '/dsh-chime-alerts/events')
-  ok(sysgetRoute !== undefined && syssetRoute !== undefined && sysbeepRoute !== undefined && eventsRoute !== undefined, '端点路径正确（sysget|sysset|sysbeep|events）')
+  ok(sysgetRoute !== undefined && syssetRoute !== undefined && sysbeepRoute !== undefined && sysnotifyRoute !== undefined && eventsRoute !== undefined, '端点路径正确（sysget|sysset|sysbeep|sysnotify|events）')
   if (sysgetRoute !== undefined) {
     let status = 0
     let body = ''
@@ -677,6 +682,33 @@ function sessionEventThreeArg(env, session, event) {
     const getRes = { writeHead: (s) => { getStatus = s }, end: () => {} }
     await sysbeepRoute.handler({ method: 'GET' }, getRes)
     ok(getStatus === 405, 'sysbeep GET 405')
+  }
+  // 0.6.0 修正：宿主通知的静态端点。首版漏注册 → 静态版点「测试」POST 到不存在的路径，
+  // 服务器回 405，表现在界面上就是「点了没反应」。这里覆盖成功/未知种类/方法三种分支。
+  if (sysnotifyRoute !== undefined) {
+    const call = async (payload, method = 'POST') => {
+      let status = 0
+      let body = ''
+      const res = { writeHead: (s) => { status = s }, end: (b) => { body = String(b || '') } }
+      const req = method === 'POST'
+        ? { method, async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(payload)) } }
+        : { method }
+      await sysnotifyRoute.handler(req, res)
+      return { status, data: body ? JSON.parse(body) : null }
+    }
+    const beforeSpawn = env.spawns.length
+    const okRes = await call({ kind: 'complete', level: 'important' })
+    ok(okRes.status === 200 && okRes.data.ok === true, 'sysnotify POST 200 ok')
+    await new Promise((r) => setTimeout(r, 30))
+    const ps = env.spawns.slice(beforeSpawn).find((s) => Array.isArray(s.argv) && typeof s.argv[0] === 'string' && s.argv[0].indexOf('powershell') >= 0)
+    ok(ps !== undefined, 'sysnotify 触发 powershell 弹 toast')
+    const ps1 = ps !== undefined ? env.fsFiles.get('n:' + ps.argv[ps.argv.length - 1]) : undefined
+    ok(ps1 !== undefined && ps1.indexOf('ToastNotificationManager') >= 0, 'sysnotify 写入 WinRT toast 脚本')
+    ok(ps1 !== undefined && ps1.indexOf('scenario="urgent"') >= 0, 'sysnotify 透传等级（important → urgent）')
+    const badRes = await call({ kind: 'nope' })
+    ok(badRes.status === 400 && badRes.data.ok === false && badRes.data.reason === 'unknown-kind', 'sysnotify 未知种类 400')
+    const getRes2 = await call({}, 'GET')
+    ok(getRes2.status === 405, 'sysnotify GET 405')
   }
   // v0.5.8：/events 端点——静态客户端唯一的「宿主→浏览器」事件通道。
   // 只转发快照拿不到/已失效的六类；complete/subcomplete/goalblocked 不入队（避免双响）。
@@ -854,6 +886,156 @@ function sessionEventThreeArg(env, session, event) {
   ok(kinds4.filter((k) => k === 'jobfail').length === 1, 'jobs.events → jobfail 一次（awaited=true 的后台作业延迟确认后仍提醒）')
   ok(kinds4.filter((k) => k === 'jobfail' || k === 'jobdone').length === 2, '总计两条：killed / 前台 / 重复 id 全部不计入')
   ok(Array.isArray(data4.jobLog) && data4.jobLog.some((x) => x.type === 'removed') && data4.jobLog.some((x) => x.type === 'settled' && x.awaited === true), '诊断环 jobLog 随 /events 返回原始作业事件')
+}
+
+
+// 21. v0.6.0：每事件提醒方式（关 / 响铃 / 通知）+ 宿主通知（PowerShell toast）
+async function burstComplete(env) {
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'running' })
+  env.emit('agent/status', { agent: agent('root', 'main', 'completed'), status: 'idle' })
+  await new Promise((r) => setTimeout(r, 30))
+}
+{
+  // 关：不发声、不弹窗
+  const env = makeEnv()
+  await env.handlers.sysset({ hostBeep: true })
+  const s = await env.handlers.sysset({ eventModes: { complete: 'off' } })
+  ok(s.ok === true, 'sysset 接受 eventModes')
+  const g = await env.handlers.sysget({})
+  ok(g.eventModes.complete === 'off', 'sysget 读回 eventModes')
+  ok(g.hostMuted.complete === true, 'mode=off 派生 hostMuted（旧客户端兼容）')
+  ok(typeof g.capNotify === 'boolean', 'sysget 返回通知能力 capNotify')
+  const before = env.spawns.length
+  await burstComplete(env)
+  ok(env.spawns.length === before, 'mode=off：事件到达也不发声、不弹通知')
+}
+{
+  // 通知：走 PowerShell + WinRT toast，重要等级带 urgent 场景
+  const env = makeEnv()
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'important' } })
+  const g = await env.handlers.sysget({})
+  ok(g.notifyLevels.complete === 'important', 'sysget 读回 notifyLevels')
+  await burstComplete(env)
+  const sp = env.spawns.find((x) => x.argv && x.argv[0] && x.argv[0].indexOf('powershell.exe') >= 0)
+  ok(sp !== undefined, 'mode=notify：spawn powershell')
+  const fileSpawn = env.spawns.find((x) => x.argv && x.argv.indexOf('-File') >= 0)
+  ok(fileSpawn !== undefined && fileSpawn.argv.indexOf('-ExecutionPolicy') >= 0, 'powershell 以 -File 跑临时脚本')
+  const ps1 = Array.from(env.fsFiles.entries()).find(([k]) => k.indexOf('.ps1') >= 0)
+  ok(ps1 !== undefined && ps1[1].indexOf('ToastNotificationManager') >= 0, '脚本经 WinRT ToastNotificationManager 弹 toast')
+  ok(ps1 !== undefined && ps1[1].indexOf('scenario="urgent"') >= 0, '重要等级用 urgent 场景')
+  ok(ps1 !== undefined && ps1[1].indexOf('Remove-Item') >= 0, '脚本跑完自删')
+  ok(env.spawns.every((x) => !(x.argv && x.argv[0] && x.argv[0].indexOf('wscript') >= 0)), '通知模式不再额外播 wav')
+}
+{
+  // 响铃：老路径（wscript + 临时 vbs）
+  const env = makeEnv()
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'beep' } })
+  await burstComplete(env)
+  const sp = env.spawns.find((x) => x.argv && x.argv[0] && x.argv[0].indexOf('wscript.exe') >= 0)
+  ok(sp !== undefined, 'mode=beep：仍走 wscript 播系统音')
+}
+{
+  // 静默等级不带 audio 元素
+  const env = makeEnv()
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'silent' } })
+  await burstComplete(env)
+  const ps1 = Array.from(env.fsFiles.entries()).find(([k]) => k.indexOf('.ps1') >= 0)
+  ok(ps1 !== undefined && ps1[1].indexOf('silent=\"true\"') >= 0, '静默等级带 audio silent')
+}
+{
+  // Windows toast 的两个实机修正：脚本必须带 BOM（否则 PowerShell 按 GBK 解析，中文标题
+  // 变「浠诲姟瀹屾垚」）；AUMID 优先借 DSH 自己，用 Setting 判注册与否，正文不重复应用名
+  const env = makeEnv()
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' } })
+  await burstComplete(env)
+  const ps1 = Array.from(env.fsFiles.entries()).find(([k]) => k.indexOf('.ps1') >= 0)
+  ok(ps1 !== undefined && ps1[1].charCodeAt(0) === 0xFEFF, 'toast 脚本以 UTF-8 BOM 开头（中文标题不乱码）')
+  ok(ps1 !== undefined && ps1[1].indexOf('electron.app.DeepSeek Harness') >= 0, 'AUMID 首选 DSH 自己（头部显示 DeepSeek Harness）')
+  ok(ps1 !== undefined && ps1[1].indexOf('.Setting') >= 0, '按 CreateToastNotifier().Setting 判 AUMID 是否注册')
+  ok(ps1 !== undefined && ps1[1].indexOf('WindowsPowerShell') >= 0, 'PS 自带 AUMID 作为回退候选')
+  ok(ps1 !== undefined && ps1[1].indexOf('<text>DeepSeek Harness</text>') < 0, '正文不再重复 DeepSeek Harness（归属名已在标题栏）')
+  ok(ps1 !== undefined && ps1[1].indexOf('<text>任务完成</text>') >= 0, 'toast 标题为事件中文名')
+}
+{
+  // Linux：notify-send（libnotify），等级映射 low / normal / critical
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' } })
+  const g = await env.handlers.sysget({})
+  ok(g.capNotify === true, 'linux：PATH 里有 notify-send 时 capNotify=true')
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'important' } })
+  const before = env.spawns.length
+  await burstComplete(env)
+  const sp = env.spawns.slice(before).find((x) => x.argv && x.argv[0] === 'notify-send')
+  ok(sp !== undefined, 'linux：mode=notify spawn notify-send')
+  ok(sp !== undefined && sp.argv[sp.argv.indexOf('-u') + 1] === 'critical', 'linux：重要等级 → -u critical')
+  ok(sp !== undefined && sp.argv[sp.argv.indexOf('-a') + 1] === 'DeepSeek Harness', 'linux：-a 应用名 DeepSeek Harness')
+  ok(sp !== undefined && sp.argv.indexOf('任务完成') >= 0, 'linux：标题为事件中文名')
+}
+{
+  // Linux 静默等级 → low
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' } })
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'silent' } })
+  const before = env.spawns.length
+  await burstComplete(env)
+  const sp = env.spawns.slice(before).find((x) => x.argv && x.argv[0] === 'notify-send')
+  ok(sp !== undefined && sp.argv[sp.argv.indexOf('-u') + 1] === 'low', 'linux：静默等级 → -u low')
+}
+{
+  // Linux 没有 notify-send：能力门关掉，不 spawn
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'linux' }, notifySendProbe: false })
+  const g = await env.handlers.sysget({})
+  ok(g.capNotify === false, 'linux：无 notify-send 时 capNotify=false（测试按钮置灰）')
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' } })
+  const before = env.spawns.length
+  await burstComplete(env)
+  ok(env.spawns.slice(before).every((x) => !(x.argv && x.argv[0] === 'notify-send')), 'linux：无 notify-send 时不 spawn（静默降级）')
+}
+{
+  // macOS：osascript display notification，非静默带提示音
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'darwin' } })
+  const g = await env.handlers.sysget({})
+  ok(g.capNotify === true, 'darwin：有 osascript 时 capNotify=true')
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'normal' } })
+  const before = env.spawns.length
+  await burstComplete(env)
+  const sp = env.spawns.slice(before).find((x) => x.argv && x.argv[0] === 'osascript')
+  ok(sp !== undefined && sp.argv[1] === '-e', 'darwin：spawn osascript -e')
+  ok(sp !== undefined && sp.argv[2].indexOf('display notification') === 0, 'darwin：走 display notification')
+  ok(sp !== undefined && sp.argv[2].indexOf('with title "任务完成"') >= 0, 'darwin：标题为事件中文名')
+  ok(sp !== undefined && sp.argv[2].indexOf('sound name "Glass"') >= 0, 'darwin：非静默带提示音')
+  ok(sp !== undefined && env.spawns.slice(before).every((x) => !(x.argv && x.argv[0] === 'afplay')), 'darwin：通知模式不再额外播系统音')
+}
+{
+  // macOS 静默等级 → 不带 sound
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'darwin' } })
+  await env.handlers.sysset({ hostBeep: true })
+  await env.handlers.sysset({ eventModes: { complete: 'notify' }, notifyLevels: { complete: 'silent' } })
+  const before = env.spawns.length
+  await burstComplete(env)
+  const sp = env.spawns.slice(before).find((x) => x.argv && x.argv[0] === 'osascript')
+  ok(sp !== undefined && sp.argv[2].indexOf('sound name') < 0, 'darwin：静默等级不带提示音')
+}
+{
+  // macOS 没有 osascript：能力门关掉
+  const env = makeEnv({ harnessExtra: { chimePlatformOverride: 'darwin' }, osascriptProbe: false })
+  const g = await env.handlers.sysget({})
+  ok(g.capNotify === false, 'darwin：无 osascript 时 capNotify=false')
+}
+
+{
+  // 测试按钮端点
+  const env = makeEnv()
+  const okRes = await env.handlers.sysnotify({ kind: 'complete' })
+  ok(okRes.ok === true, 'sysnotify 发测试通知')
+  const badRes = await env.handlers.sysnotify({ kind: 'nope' })
+  ok(badRes.ok === false && badRes.reason === 'unknown-kind', 'sysnotify 拒绝未知种类')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

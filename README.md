@@ -1,114 +1,86 @@
 # dsh-chime-alerts · DSH 声音提醒插件
 
-给 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 加一组轻量声音提醒：Agent 干完活、需要你批准、提交计划等你评审、有问题问你、目标受阻、后台任务完成/挂了，电脑响一声——不用一直盯着页面。
+给 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 加一组轻量提醒：Agent 干完活、需要你批准、提交计划等你评审、有问题问你、目标受阻、后台任务完成/挂了，电脑响一声——不用一直盯着页面。
+
+> ### ⚠️ 默认关闭
+>
+> - 每个事件**默认「关」**：装好不会自己响，要先在设置里打开「宿主提醒」，再逐个事件选「响铃」或「通知」。
+> - **Windows 的系统通知会隐藏调用 PowerShell**（Node 无法直接调 WinRT，只能借它当桥）。部分杀毒软件（如「火绒」）会把「隐藏运行 PowerShell」判为可疑并弹窗，需要放行一次；介意的话请只用「响铃」或直接关掉。
+> - macOS / Linux 的通知不经过 PowerShell（`osascript` / `notify-send`）。
+> - 仓库内没有任何预编译二进制；toast 脚本运行时生成，可逐行审阅。
 
 ## 特性
 
-- **十类事件**，每类独立开关 / 声音 / 音量：任务完成、子任务完成、后台任务完成、需要授权、插件授权、Agent 提问、计划评审、目标受阻、其他打断、后台任务失败
-- **混合发声**：网页响铃（Web Audio 合成音）与宿主蜂鸣（系统音效，页面关闭也响）两个独立开关，另有网页通知独立开关
-- **工作区静音**：设置页「工作区静音」分组里按工作区独立静音，已静音的工作区在侧栏标题旁显示橙色只读标记（不挡「…」操作）
-- **并行/后台任务逐个响**：3 个并行子代理分别完成 = 3 声（节流按种类+来源独立）
-- **宿主蜂鸣跨平台**：Windows 播系统 wav（`wscript`+WMP）；Linux 播 freedesktop 主题音（`canberra-gtk-play` → 回退 `paplay`）；macOS 用 `afplay` 播系统音
-- **声音可替换**：每事件可换内置音或上传自定义音频（动态 ≤5MB / 静态 ≤3MB）
-- **中英双语界面**（跟随 DSH 的语言设置，不是跟随系统语言）、**Node 可跑的自动化测试**（`npm test`，323 项断言）
-
-## 默认声音
-
-**默认声音全部是浏览器合成的**（Web Audio 振荡器实时生成，每类事件独立音型，如任务完成=渐强上行琶音、需要授权=慢叮咚、插件授权=短叮咚），**不附带任何音频文件，无版权、无许可证负担**，开箱即用可商用。
-
-宿主蜂鸣（可选，默认关）使用**操作系统自带音效**（Windows wav / Linux freedesktop / macOS 系统音），受系统许可条款约束；不开启就完全不涉及。
+- **十类事件**，每类独立开关 / 音色 / 音量：任务完成、子任务完成、后台任务完成、需要授权、插件授权、Agent 提问、计划评审、目标受阻、其他打断、后台任务失败
+- **每事件三选一**：关 / 响铃 / 通知（静默 / 普通 / 重要）。响铃走 Web Audio + 宿主系统音效，通知走系统通知中心，**关掉页面也能收到**
+- **工作区静音**：按工作区独立静音，侧栏标题旁显示只读标记
+- **并行任务逐个响**（节流按种类 + 来源独立）；**中英双语**（跟随 DSH 语言设置）
+- 声音可替换：内置音或上传自定义音频；内置音全部由浏览器合成，不附带音频文件
+- Node 可跑的自动化测试：`npm test`，425 项断言
 
 ## 安装
 
-### 方式 A：静态安装（npm 包，推荐，功能与动态版一致、开箱即响）
-
-一键安装（CLI 会写入 profile 依赖并注册 bundle 层）：
+**静态安装（推荐）**：
 
 ```sh
 dsh plugin --profile web add dsh-chime-alerts
 ```
 
-> npm 包地址：https://www.npmjs.com/package/dsh-chime-alerts ；GitHub Release：https://github.com/nienieai/dsh-chime-alerts/releases
+重启 DSH + 重开网页标签生效。若装了不加载，检查 profile 的 `package.json` 里 `dependencies` 有 `dsh-chime-alerts`、`dsh.profile.bundles` 也列了它，然后 `pnpm install` 再重启。
 
-安装/升级后需**重启 DSH + 重开网页标签**生效。若插件装了但不加载（CLI 偶发只写依赖、漏注册 bundle 层），手动确认 profile 的 `package.json` 两处齐备：
+**动态安装（免安装，重启 DSH 后需重装）**：`cordis_define` 粘贴 `lib/host.js` + `lib/client.js` 全文（**必须同一个包**，否则 `update` 会把另一半卸载），再 `cordis_run` 激活。
 
-1. `dependencies`（或 devDependencies）里有 `dsh-chime-alerts`——npm 包名，或本地调试用 `link:`/`file:` 指向插件目录
-2. `dsh.profile.bundles` 数组里有 `"dsh-chime-alerts"`
+## 跨平台
 
-然后在 profile 目录执行 `pnpm install`，再重启 DSH + 重开网页标签。
-
-- 宿主半（事件记录 + 系统蜂鸣）经 `lib/index.js` 自动加载；客户端半（浏览器合成音 + 设置页 + 工作区静音）经 `exports["./client"]` 以经典脚本加载（`dsh.client.platform: "web"`）
-- 客户端直接订阅 DSH 会话/工作区快照，**只保留「目标受阻」**由快照自检（`projectionValues.goal` 仍在）；其余九类（需要授权 / Agent 提问 / 计划评审 / 插件授权 / 后台任务完成 / 后台任务失败 / 任务完成 / 子任务完成 / 打断）统一改由宿主半检测后经 `/dsh-chime-alerts/events` 增量转发——`pendingInteraction` 自 DSH 0.1.5 起不在 `SessionSummary` 内，`jobsBySession` 自 0.1.7 起不在 `SessionListState` 内，而完成/子任务/打断原先也读 `pendingInteraction`，该守卫恒真会把「因等待授权而结束的回合」误判成完成；设置存浏览器（键与动态版相同，**切换安装方式设置自动继承**）
-- **静态版差异**：「其他打断」并入「任务完成」（快照无 turn 结束原因字段）、自定义音频存浏览器且上限 3MB；其余（十类事件、总开关 / 宿主蜂鸣开关 / 每事件宿主音下拉 / 宿主静音 / 宿主试听 / 工作区静音）与动态版一致
-- 设置页底部显示**版本号**（如「静态版 v0.5.10」），便于确认页面已加载最新代码
-
-### 方式 B：动态插件（免安装，重启 DSH 后需重新部署）
-
-1. `cordis_define`：`code.host` 粘贴 [`lib/host.js`](lib/host.js) 全文，`code.client` 粘贴 [`lib/client.js`](lib/client.js) 全文（`kind: "new"`，idPrefix 自取）
-2. `cordis_run`（mode `run`）激活，客户端包首次激活需在页面上批准
-3. DSH 重启后按同样步骤重装；宿主音/自定义音频存本地磁盘，其余设置存浏览器，重装后自动恢复
-
-> **两条必须注意的坑（都实测踩过）**
->
-> - **两半要放在同一个包里。** 后续用 `cordis_run` 的 `update` 切换版本时是**整包替换**，不是「只换宿主半」——如果你先只定义客户端半、再用一个 host-only 的新包去 update，会把它从浏览器里卸载掉（表现为设置页消失、浏览器不响），而 `cordis_inspect_self` 只会告诉你 `hasClientHalf: false`。改代码时请**一次性**给出 host+client 的新包。
-> - **别用 `.chunks/host.txt` 之外的旧文本**：`.chunks/host.txt`、`.chunks/client.txt` 由 `npm run chunks` 从 `lib/*.js` 生成、由 `npm test` 校验一致（见下），并**随仓库分发**（仓库已跟踪这两个文件；其余 `.chunks/*` 探针与临时产物不入库）；直接抄 README 之外的任何旧副本都可能装到过期宿主。
+| | 响铃 | 系统通知 |
+|---|---|---|
+| Windows | `wscript` + WMP 播系统 wav | PowerShell + WinRT toast（归属借 DSH 的 AUMID，标题栏显示「DeepSeek Harness」） |
+| macOS | `afplay` | `osascript` |
+| Linux | `canberra-gtk-play` → 回退 `paplay` | `notify-send` |
 
 ## 设置页
 
-设置 → 「🔔 声音提醒」：
+设置 → **声音提醒**：顶部是总开关 + 三个通道 chip（网页响铃 / 网页通知 / 宿主提醒），下面是十张事件卡片（分组：主要通知 / 其他通知 / 需要人介入时）。
 
-- 顶部：总开关（一键全部静音）+ 三个 chip——网页响铃 / 网页通知 / 宿主蜂鸣
-- 十个事件卡片（分组：主要通知 / 其他通知 / 需要人介入时）：名称 / 声音下拉（默认 + 内置音 + 音频库）/ 静音键 / 音量条（常驻可见）/ 试听；宿主蜂鸣开启时每张卡片追加一行：宿主音下拉 + 宿主静音键 + 宿主试听
-- 固定监听所有会话，范围控制用「工作区静音」分组；底部显示本地存储位置，以及可展开的「诊断信息」（宿主端点 / 语言绑定 / 工作区标记计数）
+每张卡片：网页音（下拉 + 试听）、音量、宿主提醒三选一——选「响铃」才出现宿主音与试听，选「通知」才出现等级与测试。底部可展开「诊断信息」。
 
-存储位置：动态安装优先 `sandboxPolicy.workspaceRoot`，落在系统目录时（如 DSH 从 System32 启动）自动改用 DSH 数据目录；**静态安装固定存 DSH 数据目录** `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts`（Linux/macOS 对应 `$HOME/...`，经 node:fs 直写，旧数据自动迁移）。
-
-## 工作原理
-
-- 宿主半监听 `agent/status`（完成/打断/子任务）、`session/event`（授权）、`goal/changed`（目标受阻）、`tools/execute`（提问、计划评审）、`tools/result`（插件授权，v0.4.4+）、`jobs`（后台任务完成/失败，静态安装延迟挂接，v0.5.4+；**三代契约都支持**：≤ 0.1.7 的 `jobs.onJobDone(snapshot, owner)`、部分 0.1.x 构建的 `jobs.subscribe(…)`、以及 0.2.0+ 的 `jobs.events.subscribe({ owners: 'all' }, …)`——0.2.0 把事件流挂在注册表的 `events` 属性上而不是注册表本身，只认前两种会让这两类宿主蜂鸣静默失效；一律只认 `{ type: 'settled', job }`；**前台/后台用 `removed` 区分**——前台 `bash`/`pwsh` 拿到结果后立刻 `remove()`（`awaited` 的结算先挂 1.5s 确认，收到同 id 的 `removed` 即撤销），后台作业结算后留在列表里 → 提醒；**失败用 `detail` 里的退出码判定**（DSH 契约：非零退出码只上报、不算 `failed`，`status === 'failed'` 仅限生产端自身崩溃）），节流 3s（种类+来源）后入事件缓冲
-- 动态客户端每 700ms 拉取播放；15 秒以上旧事件跳过；boot 令牌防版本串扰；完成/打断类 800ms 防抖，主代理 `inbox.hasPending` 跳过。静态客户端订阅 `sessions`/`workspaces` 快照，**只保留「目标受阻」（goal 投影）**由快照自检，并每 1500ms 拉 `/dsh-chime-alerts/events` 补齐其余九类（授权 / 提问 / 计划评审 / 插件授权 / 后台任务完成 / 后台任务失败 / 完成 / 子任务完成 / 打断；宿主只对这九类入队，与快照自检不重叠——`jobsBySession` 自 0.1.7 起不在快照内、完成三类的 `pendingInteraction` 守卫自 0.1.5 起恒真，故一并改由宿主判定）；`/events` 响应的 `boot` 令牌每次宿主重启都会更换、`seq` 从 0 重新计数，客户端据此把游标归零——漏掉这一步，长开标签页的游标会停在旧宿主的 `seq` 上，此后被宿主侧 `ev.seq > after` 全部挡掉而永久失声（只能靠刷新恢复）
-- 浏览器音零音频文件；系统蜂鸣 Windows 走临时 `.vbs` + `wscript.exe` + WMP（避开安全软件拦截 PowerShell；静态安装经 node:fs 直写，v0.5.4+），Linux/macOS 见上
+设置存浏览器（localStorage）；宿主提醒配置存 DSH 数据目录 `%USERPROFILE%\.dsh\plugins\dsh-chime-alerts`（Linux/macOS 为 `$HOME/...`），静态与动态安装共用，切换安装方式设置自动继承。
 
 ## 已知限制
 
-- 仅覆盖本 DSH 进程内宿主能观察到的事件
-- 浏览器音需要页面开着；页面关闭时只有宿主蜂鸣（需开启）
-- **Linux / macOS 分支已实现并通过 Node 模拟测试，但尚未在真实机器上实测**；Windows 为本机实测平台
-- 轮询延迟：动态版 ≤~1.5s（700ms 轮询 + 800ms 防抖）；静态版「完成/子任务/后台/目标受阻」为准实时（快照订阅），「授权/提问/计划评审/插件授权」≤~1.5s（1500ms 轮询 + 宿主 3s 节流）
-- **设置导航项图标依赖外壳的导航行结构**：外壳没有给设置分区配图标的入口，只能找「文字恰好等于分区标签、且有直属 `svg`」的行，给它打 `data-chime-nav` 再用 CSS 遮罩画图标。所以**导航行文字不能被外壳改写**（例如加上计数/后缀），否则图标退回外壳默认齿轮且不报错；同理，工作区标题旁的静音标记按行的矩形定位，外壳改版需同步适配
-- **工作区静音标记依赖外壳行结构**：v0.5.10 起静音开关本身在设置页「工作区静音」分组，侧栏只剩只读标记——标记渲染在 `body` 下的覆盖层（React 从不管理这些节点，避免旧版「被重渲染冲掉再补回」的闪烁），按
-  `document.querySelectorAll('div[role="treeitem"][aria-expanded]')` 取行、再用**整行 `textContent` 精确匹配**工作区标题定位
-  （`syncWorkspaceMarks`）；匹配不上就不显示、不报错。因此外壳若把行文本改成「标题 + 计数 / 图标」，标记会整片消失。
-  设置页「诊断信息」里的 `工作区静音标记：N 行 / M 匹配 / K 显示` 可直接分辨是没匹配上还是没显示；标记缺失不影响静音功能本身
-- **依赖 DSH 内部契约**：事件名与参数签名（`goal/changed`、`Session.ownEvents()`、`SessionSummary` 字段）不是公开 API，DSH 升级可能再次漂移；本仓库的测试用真实契约做回归（见 `tools/test-host.mjs` 的「契约回归」与 `tools/test-client-web.mjs` 的 `/events` 用例），升级 DSH 后请先跑 `npm test`
-- **实参与类型声明可能不一致**：实测 `session/event` 的 listener 只收到 2 个实参（`Session`、`SessionEvent`），而 inspect 签名写的是 3 个位置参数；插件因此**按对象形状**而非实参位置识别（`type` 字段判事件、`id`+`snapshotEvents()` 判 Session），两种布局都能工作。同类坑：动态宿主半没有 `process`（故动态安装的平台检测恒为 null，走 win32 兼容分支），静态安装是真实 Node 模块、不受此限
+- 只覆盖本 DSH 进程能观察到的事件；页面关闭时只有宿主提醒生效（且该事件不能是「关」）
+- **Linux / macOS 分支已实现并通过 Node 模拟测试，尚未在真实机器实测**；Windows 为本机实测平台
+- 延迟：动态版 ≤ ~1.5s；静态版完成类实时（快照订阅），需要人介入类 ≤ ~1.5s（轮询 + 宿主 3s 节流）
+- 导航图标、工作区静音标记依赖外壳 DOM 结构，DSH 改版可能需要适配（「诊断信息」里能看到匹配计数）
+- 依赖 DSH 内部事件契约（非公开 API），升级 DSH 后请先跑 `npm test`
+
+实现细节、契约踩坑与历代变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 仓库结构
 
-```
-lib/host.js          宿主半（函数体，动态安装粘贴；静态入口也消费它）
-lib/client.js        客户端半（函数体，动态安装粘贴）
-lib/client.web.js    静态客户端（经典脚本封套，npm 安装使用）
-lib/index.js         静态宿主入口（npm 包 main）
-lib/types/index.d.ts 类型声明
-cordis.patch.yml     bundle 补丁层
-tools/               syntax-check + 宿主/客户端/静态客户端测试
-docs/REGISTRIES.md   社区市场上架指南
-```
+| 文件 | 作用 |
+|---|---|
+| `lib/host.js` | 宿主半（动态安装粘贴用；静态入口也消费它） |
+| `lib/client.js` | 动态版客户端 |
+| `lib/client.web.js` | 静态版客户端（npm 安装使用） |
+| `lib/index.js` | 静态宿主入口（`main`） |
+| `cordis.patch.yml` | bundle 补丁层 |
+| `tools/` | 语法检查 + 三套测试 + 截图工具 |
+| `docs/REGISTRIES.md` | 社区市场上架指南 |
 
 ## 开发
 
-本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档），详见 [CHANGELOG.md](CHANGELOG.md)。
+本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档）。
 
 ```sh
-npm test      # 宿主 124 + 动态客户端 105 + 静态客户端 94 项断言（Node 即可，无需浏览器/DSH）
-npm run check # 语法检查 + .chunks 与源码一致性检查
-npm run chunks # 改完 lib/host.js 或 lib/client.js 后重建动态安装用的 .chunks/*.txt
+npm test       # 宿主 168 + 动态客户端 135 + 静态客户端 122 项断言（Node 即可）
+npm run check  # 语法检查 + .chunks 与源码一致性
+npm run chunks # 改完 lib/host.js 或 lib/client.js 后重建 .chunks/*.txt
 ```
 
 ## 发布与上架
 
-见 [`docs/REGISTRIES.md`](docs/REGISTRIES.md)（npm 发布清单 + 社区市场提交入口）。
+见 [`docs/REGISTRIES.md`](docs/REGISTRIES.md)（npm 发布清单 + 社区市场提交入口）。npm 包：<https://www.npmjs.com/package/dsh-chime-alerts>
 
 ## License
 
