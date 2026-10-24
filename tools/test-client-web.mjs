@@ -20,16 +20,16 @@ const ok = (cond, label) => {
 // 十类事件（宿主 /events 会转发其中任意一类），避免用例悄悄依赖「旧的默认响铃」。
 const BEEP_SEED = {
   kinds: {
-    complete: { mode: 'beep' },
+    complete: { enabled: true, mode: 'beep' },
     subcomplete: { enabled: true, mode: 'beep' },
-    jobdone: { mode: 'beep' },
-    jobfail: { mode: 'beep' },
-    interrupt: { mode: 'beep' },
-    approval: { mode: 'beep' },
-    pluginapproval: { mode: 'beep' },
-    question: { mode: 'beep' },
-    planreview: { mode: 'beep' },
-    goalblocked: { mode: 'beep' }
+    jobdone: { enabled: true, mode: 'beep' },
+    jobfail: { enabled: true, mode: 'beep' },
+    interrupt: { enabled: true, mode: 'beep' },
+    approval: { enabled: true, mode: 'beep' },
+    pluginapproval: { enabled: true, mode: 'beep' },
+    question: { enabled: true, mode: 'beep' },
+    planreview: { enabled: true, mode: 'beep' },
+    goalblocked: { enabled: true, mode: 'beep' }
   }
 }
 function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
@@ -716,7 +716,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(segs.length === 0, '宿主提醒默认关 → 不渲染三选一')
   const onSegs = page.filter((n) => n.type === 'button' && typeof n.props.className === 'string' && n.props.className.indexOf('snd-seg-btn on') >= 0)
   ok(onSegs.length === 0, '没有任何事件默认处于响铃/通知态')
-  ok(page.some((n) => n !== null && n.children !== undefined && typeof n.children[0] === 'string' && n.children[0].indexOf('0 / 10 个事件会提醒') === 0), '标题卡片副标题沿用 0.5.10 文案（N / 10 个事件会提醒）')
+  ok(page.some((n) => n !== null && n.children !== undefined && typeof n.children[0] === 'string' && n.children[0].indexOf('6 / 10 个事件会提醒') === 0), '标题卡片副标题沿用 0.5.10 文案（默认 6 / 10 个事件会提醒）')
 }
 
 // 9e. 0.6.0 修正：「试听这个网页音」只出声、不弹通知，也不受「网页响铃」通道开关限制。
@@ -768,7 +768,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 10. 网页通知触发（v0.5.8：改由宿主事件端点驱动）
 {
-  const env = makeEnv({ kinds: { approval: { mode: 'notify' } } })
+  const env = makeEnv({ notifyEnabled: true, kinds: { approval: { mode: 'notify' } } })
   env.setWorkspaces([{ workspaceId: 'w1', title: 'K230', sessionIds: ['s1'] }])
   let seq = 0
   let batch = []
@@ -1106,13 +1106,15 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(env.oscs.length === 0, '打开页面不补响宿主积压事件（并发轮询竞态）')
 }
 
-// 17. v0.6.0：提醒方式（关 / 响铃 / 通知）决定走哪个通道。
-// 注意：complete 已经不再由快照自检（v0.5.8 起由宿主 /events 转发），因此用 /events 驱动。
-async function driveHostEvent (seed, kind) {
-  const env = makeEnv(seed)
+// 17. 提醒方式的新语义：三选一管的是**宿主**，宿主没接管时浏览器照常提醒。
+// 注意：complete 已不再由快照自检（v0.5.8 起由宿主 /events 转发），因此用 /events 驱动。
+async function driveHostEvent (seed, kind, sysget) {
   let seq = 0
   let batch = []
-  env.overrideFetch((u) => {
+  const env = makeEnv(seed, undefined, (u) => {
+    if (u.indexOf('/sysget') >= 0 && sysget !== undefined) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(sysget) })
+    }
     if (u.indexOf('/events') >= 0) {
       seq += 1
       const body = { ok: true, boot: 'b', seq: seq - 1, events: batch }
@@ -1129,29 +1131,43 @@ async function driveHostEvent (seed, kind) {
   return env
 }
 {
+  // 宿主提醒关着（默认）：三选一不影响浏览器，选了「通知」也照常出声
   const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'notify', level: 'important' } } }, 'complete')
-  ok(env.notifications.length === 1, '通知模式：事件弹一条通知')
-  ok(env.oscs.length === 0, '通知模式：不播放网页提示音')
+  ok(env.oscs.length > 0, '宿主没接管时照常出声')
+  ok(env.notifications.length === 0, '网页通知默认关 → 不弹浏览器通知')
+}
+{
+  // 网页通知打开：弹通知 + 提示音，等级映射到 Notification 选项
+  const env = await driveHostEvent({ notifyEnabled: true, kinds: { complete: { enabled: true, mode: 'notify', level: 'important' } } }, 'complete')
+  ok(env.notifications.length === 1, '网页通知开 → 弹一条通知')
   ok(env.notifications[0] && env.notifications[0].opts.requireInteraction === true, '重要等级带 requireInteraction')
+  ok(env.oscs.length > 0, '通知和提示音同时存在（两个通道各自独立）')
 }
 {
-  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'off' } } }, 'complete')
-  ok(env.oscs.length === 0 && env.notifications.length === 0, '关模式：既不出声也不弹通知')
-}
-{
-  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'beep' } } }, 'complete')
-  ok(env.oscs.length > 0, '响铃模式：播放网页提示音')
-  ok(env.notifications.length === 0, '响铃模式：不弹通知')
-}
-{
-  const env = await driveHostEvent({ kinds: { complete: { enabled: true } }, hostMuted: { complete: true } }, 'complete')
-  ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件按关处理')
-}
-{
-  const env = await driveHostEvent({ kinds: { complete: { enabled: true, mode: 'notify', level: 'silent' } } }, 'complete')
+  const env = await driveHostEvent({ notifyEnabled: true, kinds: { complete: { enabled: true, mode: 'notify', level: 'silent' } } }, 'complete')
   ok(env.notifications.length === 1 && env.notifications[0].opts.silent === true, '静默等级：silent=true')
 }
-
-if (failures === 0) console.log('all client-web tests passed')
-else console.error(failures + ' client-web test(s) FAILED')
-process.exitCode = failures === 0 ? 0 : 1
+{
+  // 宿主接管（宿主提醒开 + 该事件选响铃）：浏览器不再重复响
+  const env = await driveHostEvent(
+    { kinds: { complete: { enabled: true, mode: 'beep' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, capNotify: true, eventModes: { complete: 'beep' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length === 0, '宿主接管后浏览器不再出声（防双响）')
+}
+{
+  // 宿主开着，但这个事件是「关」：宿主不管，浏览器照旧
+  const env = await driveHostEvent(
+    { kinds: { complete: { enabled: true, mode: 'off' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, capNotify: true, eventModes: { complete: 'off' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length > 0, '宿主开着但事件为「关」→ 浏览器照常响')
+}
+{
+  // 旧配置迁移：旧版「宿主静音」等于不想被打扰 → 卡片开关也关掉
+  const env = await driveHostEvent(
+    undefined,
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, hostMuted: { complete: true }, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件整体不提醒')
+}
