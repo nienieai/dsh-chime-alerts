@@ -63,6 +63,8 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
   }
   if (opts.noNotification) { delete globalThis.Notification }
   globalThis.window = {
+    // 「防双响」用页面地址判断是不是同一台设备；测试默认按本机（127.0.0.1）
+    location: { hostname: '127.0.0.1' },
     AudioContext: class {
       constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
       resume() { return Promise.resolve() }
@@ -680,11 +682,26 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   ok(env.notifications.length === 1 && env.notifications[0].opts.silent === true, '静默等级：silent=true')
 }
 {
-  // 宿主接管（宿主提醒开 + 该事件选响铃）：客户端不再重复响
+  // 宿主开着 + 响铃，但「防双响」默认关 → 两边各响一次
   const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'beep' }, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
   env.tick()
   await settle()
-  ok(env.oscs.length === 0, '宿主接管后浏览器不再出声（防双响）')
+  ok(env.oscs.length > 0, '防双响默认关 → 宿主响的同时浏览器也响')
+}
+{
+  // 防双响开 + 本机页面：只留宿主那一声
+  const env = makeEnv({ dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'beep' }, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
+  env.tick()
+  await settle()
+  ok(env.oscs.length === 0, '防双响开（本机）→ 只留宿主那一声')
+}
+{
+  // 防双响开，但页面在另一台设备上 → 不压
+  const env = makeEnv({ dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'beep' }, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: true, capNotify: true })
+  globalThis.window.location.hostname = '192.168.1.50'
+  env.tick()
+  await settle()
+  ok(env.oscs.length > 0, '另一台设备上不压浏览器（各响各的）')
 }
 {
   // 宿主开着但该事件为「关」→ 浏览器照常

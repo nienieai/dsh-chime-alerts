@@ -46,6 +46,8 @@ function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
 
   const winListeners = {}
   const win = {
+    // 「防双响」用页面地址判断是不是同一台设备；测试默认按本机（127.0.0.1）
+    location: { hostname: '127.0.0.1' },
     localStorage: {
       getItem: (k) => (storage.has(k) ? storage.get(k) : null),
       setItem: (k, v) => { storage.set(k, String(v)) },
@@ -161,6 +163,7 @@ function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
   })
 
   const env = {
+    win,
     storage, oscs, audioPlays, notifications, slotRegs, react,
     apply: mod.apply,
     inject: mod.inject,
@@ -719,6 +722,33 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(page.some((n) => n !== null && n.children !== undefined && typeof n.children[0] === 'string' && n.children[0].indexOf('6 / 10 个事件会提醒') === 0), '标题卡片副标题沿用 0.5.10 文案（默认 6 / 10 个事件会提醒）')
 }
 
+// 9g. 「防双响」只在「网页响铃 + 宿主提醒」都开着时出现，且默认关
+{
+  const env = makeEnv(undefined, undefined, (u) => {
+    if (u.indexOf('/sysget') >= 0) return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, hostBeep: true, hostSounds: {}, hostMuted: {}, eventModes: {}, notifyLevels: {}, platform: 'win32', capBeep: true, capNotify: true }) })
+    return null
+  })
+  await new Promise((r) => setTimeout(r, 10))
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  const row = page.find((n) => n.type === 'div' && n.props && n.props.className === 'snd-dedupe')
+  ok(row !== undefined, '网页响铃 + 宿主提醒都开 → 显示「防双响」')
+  const sw = row !== undefined && row.children ? row.children.find((c) => c && c.type === 'button') : undefined
+  ok(sw !== undefined && String(sw.props.className).indexOf('snd-switch') >= 0 && String(sw.props.className).indexOf('on') < 0, '防双响默认关')
+  if (sw !== undefined) {
+    sw.props.onClick()
+    const page2 = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+    const row2 = page2.find((n) => n.type === 'div' && n.props && n.props.className === 'snd-dedupe')
+    const sw2 = row2 !== undefined && row2.children ? row2.children.find((c) => c && c.type === 'button') : undefined
+    ok(sw2 !== undefined && String(sw2.props.className).indexOf('snd-switch on') >= 0, '点击后防双响开启')
+  }
+}
+{
+  // 宿主提醒关着时不该出现
+  const env = makeEnv()
+  await new Promise((r) => setTimeout(r, 10))
+  const page = render(env.slotRegs.find((r) => r.options.name === 'settings.section').component())
+  ok(page.every((n) => !(n.type === 'div' && n.props && n.props.className === 'snd-dedupe')), '宿主提醒关着 → 不显示「防双响」')
+}
 // 9e. 0.6.0 修正：「试听这个网页音」只出声、不弹通知，也不受「网页响铃」通道开关限制。
 // 回归 0.6.0 首版的两个误接：①试听按三选一分发 → 通知模式点试听弹浏览器通知；
 // ②试听受 webBeep 通道开关影响 → 通道关着时点试听毫无反应。
@@ -1108,7 +1138,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 17. 提醒方式的新语义：三选一管的是**宿主**，宿主没接管时浏览器照常提醒。
 // 注意：complete 已不再由快照自检（v0.5.8 起由宿主 /events 转发），因此用 /events 驱动。
-async function driveHostEvent (seed, kind, sysget) {
+async function driveHostEvent (seed, kind, sysget, hostname) {
   let seq = 0
   let batch = []
   const env = makeEnv(seed, undefined, (u) => {
@@ -1123,6 +1153,7 @@ async function driveHostEvent (seed, kind, sysget) {
     }
     return null
   })
+  if (hostname !== undefined) env.win.location.hostname = hostname
   env.runIntervals()
   await flush()
   batch = [{ seq: seq + 1, kind, sessionId: 's1', at: Date.now() }]
@@ -1148,12 +1179,29 @@ async function driveHostEvent (seed, kind, sysget) {
   ok(env.notifications.length === 1 && env.notifications[0].opts.silent === true, '静默等级：silent=true')
 }
 {
-  // 宿主接管（宿主提醒开 + 该事件选响铃）：浏览器不再重复响
+  // 宿主开着 + 响铃，但「防双响」默认关 → 两边各响一次（默认允许双响）
   const env = await driveHostEvent(
     { kinds: { complete: { enabled: true, mode: 'beep' } } },
     'complete',
     { ok: true, hostBeep: true, capBeep: true, capNotify: true, eventModes: { complete: 'beep' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
-  ok(env.oscs.length === 0, '宿主接管后浏览器不再出声（防双响）')
+  ok(env.oscs.length > 0, '防双响默认关 → 宿主响的同时浏览器也响')
+}
+{
+  // 打开「防双响」且页面就在本机：浏览器不再重复
+  const env = await driveHostEvent(
+    { dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, capNotify: true, eventModes: { complete: 'beep' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length === 0, '防双响开（本机）→ 只留宿主那一声')
+}
+{
+  // 同一个开关，但页面在另一台设备上（局域网 IP）→ 不压，各响各的
+  const env = await driveHostEvent(
+    { dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, capNotify: true, eventModes: { complete: 'beep' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' },
+    '192.168.1.50')
+  ok(env.oscs.length > 0, '另一台设备上不压浏览器（手机 / 另一台电脑各响各的）')
 }
 {
   // 宿主开着，但这个事件是「关」：宿主不管，浏览器照旧
