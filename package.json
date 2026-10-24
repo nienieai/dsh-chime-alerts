@@ -1,6 +1,6 @@
 {
   "name": "dsh-chime-alerts",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "DeepSeek Harness plugin: sound alerts for ten agent events — completion, subagent completion, background-job completion, approval, plugin approval, question, plan-review, goal-blocked, interruption, and background-job failure (browser Web Audio + system beep + Windows toast, per-event off/beep/notify mode with notification level, per-event sounds/volume, per-workspace mute with a read-only sidebar marker)",
   "license": "MIT",
   "author": {
@@ -29,8 +29,10 @@
   },
   "files": [
     "lib",
+    "dynamic",
     "cordis.patch.yml",
     "docs",
+    "SECURITY.md",
     "CHANGELOG.md"
   ],
   "publishConfig": {
@@ -38,9 +40,10 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node tools/chunk-src.mjs --verify && node tools/test-host.mjs && node tools/test-client.mjs && node tools/test-client-web.mjs",
-    "check": "node --check lib/index.js && node --check lib/client.web.js && node tools/syntax-check.mjs && node tools/chunk-src.mjs --verify",
-    "chunks": "node tools/chunk-src.mjs"
+    "test": "node tools/build-body.mjs --verify && node tools/chunk-src.mjs --verify && node tools/test-host.mjs && node tools/test-client.mjs && node tools/test-client-web.mjs",
+    "check": "node --check lib/index.js && node --check lib/host.js && node --check lib/client.web.js && node tools/syntax-check.mjs && node tools/build-body.mjs --verify && node tools/chunk-src.mjs --verify",
+    "body": "node tools/build-body.mjs",
+    "chunks": "node tools/build-body.mjs && node tools/chunk-src.mjs"
   },
   "keywords": [
     "dsh",
@@ -57,7 +60,8 @@
     "通知音"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.19.0",
+    "dsh": ">=0.2.0-rc.2"
   },
   "dsh": {
     "bundle": {

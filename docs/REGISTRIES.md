@@ -1,56 +1,93 @@
-# 上架社区市场
+# 上架各插件市场
 
-调研结论（2026-05）：DSH 生态没有单一官方市场，社区是「GitHub 仓库 + PR 提交 registry 条目」模式。
-官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
-（Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
+调研与核对时间：2026-10-25。下面每一条都来自对方站点的「收录/提交」页面或官方文档，不是推测。
 
-> **状态（2026-10-24 19:20）**：`0.6.0` 已提交到 `main`（`575bed4`），**尚未发布**——npm `latest` 仍是 `0.5.10`。发布前先在本机重启一次 DSH（宿主半是进程启动时加载的），确认新设置页（三选一 / 通知等级 / 自绘下拉）与宿主通知在真机上可用；静态版与动态版设置页已对齐，通知在 Windows / macOS / Linux 均有实现（Windows 需重启后才会用上 DSH 的 AUMID 与 UTF-8 BOM 修正）。
+## 一、各渠道的要求
 
-> **状态（2026-10-24）**：`0.5.10` 已发布到 npm（`latest = 0.5.10`，`gitHead = 46d830f`，2026-10-24T01:29Z），GitHub 上 `v0.5.10` 标签与 Release 同步。跳过的两个版本号：`0.5.8`（三代 DSH 契约适配）与 `0.5.9`（打完内部标签后又修掉导航图标与动态版 `const` 两个问题，故并入 `0.5.10`、tag 已删）都没有上传，因此从 `0.5.7` 升级的用户会一次性拿到两代改动。发布账号启用了 2FA，`npm publish` 必须在维护者终端完成授权（网页 `/auth/cli/*` 或 `--otp`，一次性令牌有时效，过期会得到 `Invalid or Expired Token` 的 404 页）。
+### 1. dsh.so（社区索引站，扫描最严）
 
-## 发布前检查
+来源：<https://www.dsh.so/zh/submit/>
 
-- [x] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（`nienieai/dsh-chime-alerts`）
-- [ ] `LICENSE` 版权行换成作者真名/昵称
-- [x] npm 包名 `dsh-chime-alerts` 未被占用（2026-08-25 首次发布 `0.5.6`；当前 `latest` 为 `0.5.10`）
-- [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 工作区静音标记）
-- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`，2026-10-24 发布 `0.5.10`）
-- [x] 静态双端完成后再声明 `dsh.client`（v0.5.0 起已声明并实测：经典脚本封套 + `exports["./client"]`）
+接受标准（必须全部满足）：
 
-## 已实证的静态 bundle 模板
+- DSH 兼容信号至少其一：`package.json` 的 `dsh` 字段 / `cordis` manifest / `dsh.plugin.*` manifest / 仓库带 `dsh-plugin` 话题
+- README 带安装说明
+- 开源许可证（SPDX 可识别）
+- 插件 id 合规：仓库名（纯 npm 条目则为包名）匹配 `^[a-z0-9]+(-[a-z0-9]+)*$`
+- **源码可扫描**：仓库里要有可供安全扫描分析的源码（纯文档或空仓库无法完成扫描）
+- **安全扫描无阻断级发现**：硬编码密钥、数据外传端点、破坏性操作、挖矿特征。警告级发现需人工复核
+- 扫描器是 [`wulun811/dsh-plugin-vet`](https://github.com/wulun811/dsh-plugin-vet)：JS/TS 走 AST 规则（R1–R20），shell/PowerShell 走「下载即执行」模式匹配
+- 检查对象是**已发布的 tarball**，不是仓库工作区
+- 收录后的兼容性状态只有 `Declared`（声明），实测通过才可能变 `Verified`
 
-本仓库的 package.json 形态（`dsh.bundle.patch` + `exports` types/default + `publishConfig` + `files` + Node 测试）已按社区静态 bundle 模板验证：
-- `dsh.bundle.patch` → `cordis.patch.yml`（`insert: [{ id, name: 包名 }]`）让 `dsh plugin --profile <name> add <包>` 一键安装
-- 完整静态双端 = `exports["./client"]`（`window.__ModuleLoader__.load` 经典脚本封套）+ `dsh.client: { platform: "web", inject: [客户端服务模块 id] }`
-- 客户端检测可以**不需要宿主桥**：inject `sessions`/`workspaces` 服务订阅快照（只保留 goal 投影——`pendingInteraction` 与 `jobsBySession` 分别在 DSH 0.1.5 / 0.1.7 起已不在 `SessionSummary` / `SessionListState` 内；`complete`/`subcomplete`/`interrupt` 原先也用 `pendingInteraction` 守卫、恒真会误判，故与前述各类一并须走宿主 `/events` 桥）。宿主桥的 `/events` 响应带 `boot` 令牌，每次宿主重启都会更换且 `seq` 从 0 重新计数；客户端**必须**在 `boot` 变化时把游标归零（宿主侧按 `ev.seq > after` 过滤，不归零会让该标签页此后永久失声，只能靠刷新恢复）
-- 设置页插槽一致（`settings.section`），label 支持 `() => string` 函数形式；样式用 `<style data-plugin data-plugin-css>` + HMR 去重
+### 2. DSH Plugin Hub（dsh-plugin.org）
 
-## 各市场提交入口
+来源：<https://dsh-plugin.org/zh/submit>（经其发布教程转述）
 
-| 市场 | 仓库 | 提交方式 |
+- GitHub **公开仓库**（私有仓库或只提供二进制的插件无法通过自动扫描）
+- 仓库 Topics 加 `dsh-plugin`
+- README 含可复制的安装命令 `dsh plugin --profile web add <包名>`
+- 导出 `apply(ctx)`，符合插件规范
+- 不冒充官方项目
+- 收录后初始状态 `unconfirmed`，人工核实兼容性后才转 `verified`
+
+### 3. DSH-Store（第三方市场 + 生命周期管理）
+
+来源：<https://github.com/AI-Scarlett/DSH-Store>
+
+- 除常规收录外要求 **Runtime Verified**：绑定具体 DSH 版本、操作系统、Profile、时间，并附**公开证据**（单元测试不算）
+
+### 4. 其他旧渠道（仍可发 PR）
+
+| 市场 | 仓库 |
+|---|---|
+| WhaleHub | [vvlife/whalehub-dsh](https://github.com/vvlife/whalehub-dsh) |
+| dsh-market | [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market) |
+| dshfind | [hikariming/dshfind](https://github.com/hikariming/dshfind) |
+| awesome-deepseek-harness | [0xsline/awesome-deepseek-harness](https://github.com/0xsline/awesome-deepseek-harness) |
+
+## 二、本仓库的对照结果
+
+| 要求 | 状态 |
+|---|---|
+| `dsh.bundle.patch` + `dsh.client` 声明 | ✅ `cordis.patch.yml` + `platform: web` |
+| README 安装命令 | ✅ `dsh plugin --profile web add dsh-chime-alerts` |
+| SPDX 许可证 | ✅ MIT |
+| id 规范 `^[a-z0-9]+(-[a-z0-9]+)*$` | ✅ `dsh-chime-alerts` |
+| 公开仓库 + `dsh-plugin` 话题 | ✅ 校验：`api.github.com/repos/nienieai/dsh-chime-alerts/topics` |
+| 源码可扫描 | ✅ 纯 JS，无编译产物依赖 |
+| `engines` 声明 | ✅ `node >=22.19.0` + `engines.dsh`（v0.6.1 补） |
+
+### 自扫结果（用 dsh-plugin-vet 0.3.17 的真实扫描引擎）
+
+| 目标 | verdict | 说明 |
 |---|---|---|
-| WhaleHub 🐋 | [vvlife/whalehub-dsh](https://github.com/vvlife/whalehub-dsh) | 按仓库 README 的 registry 格式发 PR（发现/搜索/一键安装） |
-| dsh-market | [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market) | 按仓库 README 发 PR（DSH 内可视化市场） |
-| dshfind | [hikariming/dshfind](https://github.com/hikariming/dshfind) | 发 PR / issue（插件市场 + 最佳实践） |
-| awesome-deepseek-harness | [0xsline/awesome-deepseek-harness](https://github.com/0xsline/awesome-deepseek-harness) | 发 PR 加一条精选条目（低门槛高曝光） |
+| 发布 tarball（`npm pack`） | **clean**（score 68） | 无 high/critical；仅 medium：`rmSync` 临时文件（R11）、循环内 Map.set（R9）；info：`react` 幽灵依赖（DSH 客户端由宿主提供）、动态 base（R15） |
+| 仓库工作区 | suspicious | 9 条 R2 high 全部来自 `tools/`（测试需要 eval 函数体源码）与本地未跟踪的 `preview/` 截图脚本；`tools/` 不随包发布 |
 
-各市场 registry 字段名略有差异，以目标仓库 README 为准；通用元数据块：
+结论：**发布物可过 dsh.so 自动扫描**；仓库级扫描的 high 是「测试代码 eval 自身源码」这一形态导致的，已在 SECURITY.md 说明。
 
-```json
-{
-  "name": "dsh-chime-alerts",
-  "description": "十类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / 插件授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + 系统蜂鸣混合发声，每事件独立开关/声音/音量，按工作区静音（设置页分组 + 侧栏只读标记）。",
-  "repo": "https://github.com/nienieai/dsh-chime-alerts",
-  "npm": "dsh-chime-alerts",
-  "tags": ["notification", "sound", "audio", "提醒", "声音"],
-  "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh plugin add dsh-chime-alerts（npm 当前发布 v0.5.7，v0.5.10 待补发）",
-  "platforms": ["windows", "linux", "macos"],
-  "license": "MIT"
-}
+## 三、发布前检查
+
+- [x] `repository.url` / `bugs.url` 指向真实仓库
+- [ ] `LICENSE` 版权行换成真实作者名
+- [ ] README 放演示 GIF
+- [x] 静态双端（`exports["./client"]` + `dsh.client`）实测可用
+- [x] `npm publish`（`latest` 当前为 `0.5.10`；`0.6.0` 未发布）
+- [x] 安全加固（v0.6.1）：端点鉴权、请求体上限、试听限流、宿主音白名单
+
+## 四、发布命令（备忘）
+
+```sh
+npm test                       # 460 项断言
+npm run check                  # 语法 + 生成物一致性
+npm pack --dry-run             # 核对发布物清单
+npm publish                    # 需要维护者终端做 2FA（--otp 或网页 /auth/cli/*）
+git tag v0.6.x && git push origin v0.6.x
 ```
 
-## 参考案例
+## 五、参考
 
-- 官方发布文档：[publish.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
-- 官方脚手架 RFC（模板仓库 + `pnpm create dsh-plugin`）：[Discussion #1629](https://github.com/deepseek-ai/deepseek-harness/discussions/1629)
-- 社区开发引导（含 entry-contract 参考）：[vlln/plugin-registry](https://github.com/vlln/plugin-registry)
+- 官方打包与安装：[publish.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
+- 官方插件索引格式：[plugin-market.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/plugin-market.zh.md)
+- Web 载体与鉴权：[web-server.zh.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web-server.zh.md)

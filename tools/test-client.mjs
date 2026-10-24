@@ -62,9 +62,16 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
     onclick = null
   }
   if (opts.noNotification) { delete globalThis.Notification }
+  const winListeners = {}
   globalThis.window = {
     // 「防双响」用页面地址判断是不是同一台设备；测试默认按本机（127.0.0.1）
     location: { hostname: '127.0.0.1' },
+    // v0.6.1：手势解锁需要 window 级监听（真实浏览器里的自动播放策略时机）
+    addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn) },
+    removeEventListener(type, fn) {
+      const a = winListeners[type]
+      if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1) }
+    },
     AudioContext: class {
       constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {} }
       resume() { return Promise.resolve() }
@@ -120,6 +127,7 @@ function makeEnv(seedLocal, legacyLocal, pullEvents = [], workspaceItems = [], o
   )
   plugin.apply(ctx)
   return { storage, oscs, gainRamps, audioPlays, notifications, react, styles, calls, slotRegs, tick: () => intervals[0](),
+    fireWindow(type) { const a = winListeners[type]; if (a) for (const fn of a.slice()) { try { fn({ type }) } catch (err) {} } },
     runIntervals: () => { for (const fn of intervals.slice()) { try { fn() } catch (err) {} } } }
 }
 
@@ -716,6 +724,34 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   env.tick()
   await settle()
   ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件整体不提醒')
+}
+// v0.6.1：动态版的音频解锁与能力判定
+{
+  // 宿主没有蜂鸣能力（capBeep=false）+ 防双响开着 → 不能压掉浏览器那一声
+  const env = makeEnv({ dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }], [], undefined, { ok: true, hostBeep: true, hostSounds: {}, eventModes: { complete: 'beep' }, hostMuted: {}, dir: '/tmp/chime-test', platform: 'win32', capBeep: false, capNotify: true })
+  env.tick()
+  await settle()
+  ok(env.oscs.length > 0, '宿主无蜂鸣能力时防双响不压浏览器（动态版）')
+}
+{
+  // AudioContext 挂起（页面刚打开、用户还没交互）→ 先排队，首次手势后补响。
+  // 真实浏览器的 resume() 在无手势时不会真正解锁，这里用 gestureDone 模拟同一语义。
+  let gestureDone = false
+  const env = makeEnv({ kinds: { complete: { enabled: true, mode: 'off' } } }, undefined, [{ seq: 1, kind: 'complete', at: Date.now() }])
+  const queued = []
+  globalThis.window.AudioContext = class {
+    constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {} }
+    resume() { if (gestureDone) this.state = 'running'; return Promise.resolve() }
+    createOscillator() { const o = { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; queued.push(o); return o }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} } }
+  }
+  env.tick()
+  await settle()
+  ok(queued.length === 0, 'AudioContext 挂起时不静默丢弃（先排队，不发声）')
+  gestureDone = true
+  env.fireWindow('pointerdown')
+  await settle()
+  ok(queued.length === 8, '首次用户手势后补响排队的提示音（4 音符 × 基音+泛音）')
 }
 {
 // 「测试」按钮走宿主 sysnotify

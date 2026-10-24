@@ -16,3 +16,5 @@ runtime/
 # test / check 脚本直接调用——不能忽略，否则干净 clone 下 npm test 直接
 # MODULE_NOT_FOUND（v0.5.8 修复）。
 .test-out.txt
+# 本地截图/预览脚本（用 CDP 抓设置页用），不随包发布，也不进仓库
+preview/

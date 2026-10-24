@@ -1,5 +1,21 @@
 # 更新日志
 
+## v0.6.1
+
+**一次完整的安全审计与加固**：插件自己开的本地 HTTP 端点此前没有任何鉴权，其中一条链路可以被打成「任意网页 → 持久化代码执行」。本版修掉了这条链，并顺带修掉一批会让提醒静默丢失的问题。
+
+- **P0 · 宿主音参数注入 → 本机代码执行（已修）**：`/sysset` 只校验 `hostSounds` 是「非空字符串」，值随后被原样拼进 `.vbs` 脚本（`p.URL = "C:\Windows\Media\<值>"`）交给 `wscript.exe` 执行。加上端点不鉴权，任意网页一次跨站 POST 就能把 payload 存进设置，下一次提醒时执行。现在 `hostSounds` 只接受设置页下拉里存在的枚举值（平台默认 + 客户端选项），加载旧设置时也会丢弃非白名单值，生成脚本前再校验一次。
+- **P1 · 五条本地端点零鉴权（已修）**：DSH 的 `webServer` 只按路径派发、不做鉴权（Host/Origin 与会话校验只做在 `/api` 上）。现在每条路由都先过 `ctx.connection.requestRejection({ headers })`，401/403 直接拒绝；没有 `connection` 服务的组合退回「Origin 必须与 Host 同源 + Host 必须是 loopback」。
+- **P1 · 试听端点可被刷（已修）**：`sysbeep`/`sysnotify` 直接调发声/通知，绕过了 3s 节流。现在同事件 700ms、全局 10 次/10s 限流（429），请求体上限 64KB（413）。
+- **P1 · 防双响会压掉唯一能听见的那一声（已修）**：判定只看「宿主开没开」，不看它**有没有能力**出声；宿主没有蜂鸣/通知能力时浏览器那一声也被压掉。现在 `capBeep`/`capNotify` 参与判定。
+- **P1 · 动态版首个提示音静默丢失（已修）**：页面刚打开时 `AudioContext` 处于 suspended，旧代码同步判活后直接放弃。现在移植静态版的「排队 + 手势解锁 + statechange 补响」，并加上主总线和错峰调度（并发提示音不再硬削波）。
+- **P2 · 静态版多标签页各响一遍（已修）**：`amLeader()` 此前是死代码，现在接进了 `fire()`。
+- **P2 · 一次瞬时失败永久禁用宿主提醒（已修）**：`loadHostBeep` 失败会把能力位置 false 且永不恢复。现在连通恢复后重新读设置；能力探测的负结论也不再永久缓存。
+- **P2 · 复位/迁移/同步**：`恢复默认` 现在会把 `eventModes` 一起推给宿主（否则界面全关、后台仍响）；静态版补上旧存储键与「静音按标题 → 按 workspaceId」两处迁移；多标签页设置加了 `storage` 监听；`goalblocked` 首帧只建基线不误报；轮询加了 in-flight 守卫。
+- **P2 · Linux `question` 事件无声（已修）**：freedesktop 主题只有 `window-question.oga`，没有 `dialog-question.oga`，`canberra` 走主题查找能响、`paplay` 回退会失败。现在按别名回退（已在 Ubuntu 22.04 实测：`paplay dialog-question` 返回 1、`window-question` 返回 0）。
+- **工程侧**：`lib/host.js` 改成 ESM 模块，`lib/index.js` 直接 import，发布物里**不再有 `new Function`**；动态安装的粘贴体由 `tools/build-body.mjs` 生成到 `dynamic/host.body.js`（`npm run check` 校验同步）。`tools/cdp-shot.mjs` 不再用 `process.exit`（仓库静态扫描不再被判 critical）。补 `SECURITY.md`；`engines` 声明 `node >=22.19` 与 `engines.dsh`。
+- 测试 **460** 项（宿主 187 / 动态客户端 140 / 静态客户端 133），新增鉴权、限流、请求体上限、白名单、VBS 注入、Linux 回退、能力位去重等 26 项回归。
+
 ## v0.6.0
 
 **每个事件从「开关」升级为「三选一 + 明细」：关 / 响铃 / 通知**；宿主侧第一次有了真正的系统通知（Windows toast），设置页按 DSH 的控件尺寸与视觉重做。

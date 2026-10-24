@@ -16,7 +16,8 @@
 - **防双响**：网页响铃与宿主提醒都开着时出现，默认关；开启后**同一台设备只响一次**（只留宿主那一声），手机 / 另一台电脑各响各的
 - **并行任务逐个响**（节流按种类 + 来源独立）；**中英双语**（跟随 DSH 语言设置）
 - 声音可替换：内置音或上传自定义音频；内置音全部由浏览器合成，不附带音频文件
-- Node 可跑的自动化测试：`npm test`，434 项断言
+- Node 可跑的自动化测试：`npm test`，460 项断言
+- **本地端点自行鉴权**（会话凭据 + Origin 校验）、请求体上限、试听限流；细节见 [SECURITY.md](SECURITY.md)
 
 ## 安装
 
@@ -28,7 +29,9 @@ dsh plugin --profile web add dsh-chime-alerts
 
 重启 DSH + 重开网页标签生效。若装了不加载，检查 profile 的 `package.json` 里 `dependencies` 有 `dsh-chime-alerts`、`dsh.profile.bundles` 也列了它，然后 `pnpm install` 再重启。
 
-**动态安装（免安装，重启 DSH 后需重装）**：`cordis_define` 粘贴 `lib/host.js` + `lib/client.js` 全文（**必须同一个包**，否则 `update` 会把另一半卸载），再 `cordis_run` 激活。
+**动态安装（免安装，重启 DSH 后需重装）**：`cordis_define` 粘贴 `dynamic/host.body.js` + `lib/client.js` 全文（**必须同一个包**，否则 `update` 会把另一半卸载），再 `cordis_run` 激活。`dynamic/host.body.js` 由 `tools/build-body.mjs` 从 `lib/host.js` 生成，`npm run check` 会校验两者同步。
+
+要求 Node ≥ 22.19（由 DSH 自身决定），包内声明了 `engines.dsh`，装到版本不匹配的 DSH 上会被拒绝。
 
 ## 跨平台
 
@@ -37,6 +40,8 @@ dsh plugin --profile web add dsh-chime-alerts
 | Windows | `wscript` + WMP 播系统 wav | PowerShell + WinRT toast（归属借 DSH 的 AUMID，标题栏显示「DeepSeek Harness」） |
 | macOS | `afplay` | `osascript` |
 | Linux | `canberra-gtk-play` → 回退 `paplay` | `notify-send` |
+
+平台实测情况：**Windows** 本机实测；**Linux** 在 Ubuntu 22.04.5（GNOME 42.9）实测——`canberra-gtk-play` / `paplay` 播放各音效、`notify-send` 三档等级全部成功，并发现并修掉了 `question` 事件在 freedesktop 主题缺 `dialog-question.oga` 时静默无声的问题；**macOS** 只有模拟测试，尚无真机验证。
 
 ## 设置页
 
@@ -51,7 +56,8 @@ dsh plugin --profile web add dsh-chime-alerts
 ## 已知限制
 
 - 只覆盖本 DSH 进程能观察到的事件；页面关闭时只有宿主提醒生效（且该事件不能是「关」）
-- **Linux / macOS 分支已实现并通过 Node 模拟测试，尚未在真实机器实测**；Windows 为本机实测平台
+- **macOS 分支已实现并通过 Node 模拟测试，尚未在真实机器实测**；Windows 本机实测、Linux 已在 Ubuntu 22.04 实测
+- 防双响的「同机」是按页面地址判断的（`localhost`/`127.0.0.1`）：用端口转发/隧道从另一台机器以 `127.0.0.1` 打开时会被误判成本机，此时请把防双响关掉
 - 延迟：动态版 ≤ ~1.5s；静态版完成类实时（快照订阅），需要人介入类 ≤ ~1.5s（轮询 + 宿主 3s 节流）
 - 导航图标、工作区静音标记依赖外壳 DOM 结构，DSH 改版可能需要适配（「诊断信息」里能看到匹配计数）
 - 依赖 DSH 内部事件契约（非公开 API），升级 DSH 后请先跑 `npm test`
@@ -62,23 +68,26 @@ dsh plugin --profile web add dsh-chime-alerts
 
 | 文件 | 作用 |
 |---|---|
-| `lib/host.js` | 宿主半（动态安装粘贴用；静态入口也消费它） |
-| `lib/client.js` | 动态版客户端 |
+| `lib/host.js` | 宿主半（ESM 模块，导出 `createHostPlugin`） |
+| `lib/client.js` | 动态版客户端（函数体，粘贴用） |
 | `lib/client.web.js` | 静态版客户端（npm 安装使用） |
-| `lib/index.js` | 静态宿主入口（`main`） |
+| `lib/index.js` | 静态宿主入口（`main`），import `host.js`，不再有 `new Function` |
+| `dynamic/host.body.js` | 动态安装粘贴用的函数体（由 `tools/build-body.mjs` 生成） |
 | `cordis.patch.yml` | bundle 补丁层 |
-| `tools/` | 语法检查 + 三套测试 + 截图工具 |
-| `docs/REGISTRIES.md` | 社区市场上架指南 |
-| `docs/TODO.md` | 待办（防双响的可配置压边、同机判定） |
+| `tools/` | 语法检查 + 三套测试 + 构建脚本 + 截图工具 |
+| `SECURITY.md` | 安全边界与报告方式 |
+| `docs/REGISTRIES.md` | 各市场准入要求与上架状态 |
+| `docs/TODO.md` | 待办 |
 
 ## 开发
 
 本插件由 AI Agent 工具辅助开发（功能设计、代码实现、代码审计、测试与文档）。
 
 ```sh
-npm test       # 宿主 168 + 动态客户端 137 + 静态客户端 129 项断言（Node 即可）
-npm run check  # 语法检查 + .chunks 与源码一致性
-npm run chunks # 改完 lib/host.js 或 lib/client.js 后重建 .chunks/*.txt
+npm test       # 宿主 187 + 动态客户端 140 + 静态客户端 133 = 460 项断言（Node 即可）
+npm run check  # 语法检查 + 生成物一致性（dynamic/host.body.js、.chunks）
+npm run body   # 改完 lib/host.js 后重建 dynamic/host.body.js
+npm run chunks # 重建 .chunks/*.txt（动态安装粘贴用的分帧文本）
 ```
 
 ## 发布与上架

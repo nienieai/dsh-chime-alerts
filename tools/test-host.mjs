@@ -1,6 +1,7 @@
 // 宿主半逻辑冒烟测试：node tools/test-host.mjs（Node 可跑，无需 DSH）
 // 用假 ctx / harness 驱动 host.js，断言九类事件的检测、节流、拉取过滤与蜂鸣。
 import { readFileSync } from 'node:fs'
+import { createHostPlugin } from '../lib/host.js'
 
 const source = readFileSync(new URL('../lib/host.js', import.meta.url), 'utf8')
 
@@ -61,11 +62,18 @@ function makeEnv(opts = {}) {
                 return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { finalize: () => ({ text: opts.homeText ?? '/home/user' }) } } }
               }
             }
+            if (argv0 === 'paplay' && Array.isArray(opts.paplayFailIds)) {
+              const file = String(spOpts.argv[1] || '')
+              const fail = opts.paplayFailIds.some((id) => file.indexOf('/' + id + '.oga') >= 0)
+              return { done: Promise.resolve({ exitCode: fail ? 1 : 0 }), collected: {} }
+            }
             return { done: Promise.resolve({ exitCode: 0 }), collected: {} }
           },
         }
       }
       if (name === 'fs') return fsMock
+      // v0.6.1：路由准入测试用 —— connection 服务存在时由它决定 401/403
+      if (name === 'connection') return opts.connection
       if (name === 'sandboxPolicy') return { workspaceRoot: opts.workspaceRoot ?? 'C:/ws' }
       if (name === 'agents') return {
         list: () => agentsList,
@@ -127,13 +135,10 @@ function makeEnv(opts = {}) {
         dirname: (p) => p.replace(/[\\/][^\\/]+$/, ''),
       }
     : undefined
-  // 动态安装把 lib/host.js 当函数体求值时**没有第三个实参**（__nodeIo 未声明），
-  // 静态安装才有。两种调用形态都必须能 apply —— v0.5.8 之前裸引用 __nodeIo，
-  // 动态形态会 ReferenceError，而 README 方式 B 正是教用户粘这个文件。
+  // v0.6.1：宿主半是 ESM 模块，测试直接 import 工厂，不再 eval 源码。
+  // dynamicLike 仍保留语义差别：动态安装拿不到 nodeIo（第三参为 undefined）。
   const dynamicLike = opts.dynamicLike === true
-  const plugin = dynamicLike
-    ? new Function('ctx', 'harness', source)(ctx, harness)
-    : new Function('ctx', 'harness', '__nodeIo', source)(ctx, harness, nodeIo)
+  const plugin = createHostPlugin(ctx, harness, dynamicLike ? undefined : nodeIo)
   plugin.apply(ctx)
   const emit = (event, ...args) => { for (const fn of listeners[event] ?? []) fn(...args) }
   // v0.5.4：模拟 internal/service 事件（jobs 服务晚挂载）
@@ -1036,6 +1041,133 @@ async function burstComplete(env) {
   ok(okRes.ok === true, 'sysnotify 发测试通知')
   const badRes = await env.handlers.sysnotify({ kind: 'nope' })
   ok(badRes.ok === false && badRes.reason === 'unknown-kind', 'sysnotify 拒绝未知种类')
+}
+
+// ---- v0.6.1 安全修复：路由准入 / 限流 / 请求体上限 / 宿主音白名单 / Linux 回退 ----
+async function bootRoutes(opts) {
+  const routes = []
+  const env = makeEnv(Object.assign({}, opts, {
+    noHarness: true,
+    webServerRegister: (route) => { routes.push(route); return () => {} },
+  }))
+  await new Promise((r) => setTimeout(r, 30))
+  const find = (p) => routes.find((rt) => rt.path === '/dsh-chime-alerts/' + p)
+  return { env, routes, sysget: find('sysget'), sysset: find('sysset'), sysbeep: find('sysbeep'), sysnotify: find('sysnotify'), events: find('events') }
+}
+function res() {
+  const state = { status: 0, body: '' }
+  return { state, res: { writeHead: (s) => { state.status = s }, end: (b) => { state.body = b === undefined ? '' : String(b) } } }
+}
+function postReq(payload) {
+  return {
+    method: 'POST',
+    headers: {},
+    async *[Symbol.asyncIterator]() { yield Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload)) },
+  }
+}
+{
+  // ① connection 说不行 → 401/403，且不产生任何副作用
+  const { env, sysget, sysbeep, sysnotify } = await bootRoutes({ connection: { requestRejection: () => 403 } })
+  const a = res()
+  await sysget.handler({ method: 'GET', headers: {} }, a.res)
+  ok(a.state.status === 403, 'connection 拒绝 → sysget 回 403（不再裸奔）')
+  const before = env.spawns.length
+  const b = res()
+  await sysbeep.handler(postReq({ kind: 'complete' }), b.res)
+  ok(b.state.status === 403 && env.spawns.length === before, 'connection 拒绝 → sysbeep 403 且不 spawn')
+  const c = res()
+  await sysnotify.handler(postReq({ kind: 'complete' }), c.res)
+  ok(c.state.status === 403, 'connection 拒绝 → sysnotify 403')
+}
+{
+  // ② 没有 connection 服务时退回 Origin/Host 同源判定（挡跨站与 DNS rebinding）
+  const { env, sysget, sysbeep } = await bootRoutes({})
+  const same = res()
+  await sysget.handler({ method: 'GET', headers: { host: '127.0.0.1:53087' } }, same.res)
+  ok(same.state.status === 200, '无 connection：本机同源请求放行')
+  const cross = res()
+  await sysget.handler({ method: 'GET', headers: { host: '127.0.0.1:53087', origin: 'http://evil.example' } }, cross.res)
+  ok(cross.state.status === 403, '无 connection：跨站 Origin 被拒（403）')
+  const before = env.spawns.length
+  const crossPost = res()
+  await sysbeep.handler({ method: 'POST', headers: { host: '127.0.0.1:53087', origin: 'http://evil.example' }, async *[Symbol.asyncIterator]() { yield Buffer.from('{"kind":"complete"}') } }, crossPost.res)
+  ok(crossPost.state.status === 403 && env.spawns.length === before, '无 connection：跨站 POST 不会触发出声')
+  const rebind = res()
+  await sysget.handler({ method: 'GET', headers: { host: 'evil.example:53087' } }, rebind.res)
+  ok(rebind.state.status === 403, '无 connection：非 loopback Host（DNS rebinding）被拒')
+}
+{
+  // ③ 试听端点限流：同事件 700ms 内第二次 429
+  const { sysbeep } = await bootRoutes({})
+  const one = res()
+  await sysbeep.handler(postReq({ kind: 'approval' }), one.res)
+  ok(one.state.status === 200, 'sysbeep 首次 200')
+  const two = res()
+  await sysbeep.handler(postReq({ kind: 'approval' }), two.res)
+  ok(two.state.status === 429, 'sysbeep 700ms 内重复 → 429（限流）')
+  const other = res()
+  await sysbeep.handler(postReq({ kind: 'question' }), other.res)
+  ok(other.state.status === 200, '不同事件不受同事件限流影响')
+}
+{
+  // ④ 请求体上限 64KB
+  const { sysset } = await bootRoutes({})
+  const big = res()
+  await sysset.handler(postReq({ hostBeep: true, pad: 'x'.repeat(70 * 1024) }), big.res)
+  ok(big.state.status === 413, '超过 64KB 的请求体 → 413')
+}
+{
+  // ⑤ hostSounds 白名单：注入串写不进设置，也不会拼进 VBS
+  const { env, sysset, sysbeep, sysget } = await bootRoutes({})
+  const evil = 'x" : CreateObject("WScript.Shell").Run "calc" \''
+  const w = res()
+  await sysset.handler(postReq({ hostSounds: { complete: evil } }), w.res)
+  ok(w.state.status === 200, 'sysset 接受请求本身（其余字段合法）')
+  const g = res()
+  await sysget.handler({ method: 'GET', headers: {} }, g.res)
+  const parsed = JSON.parse(g.state.body)
+  ok(parsed.hostSounds.complete === undefined, '注入串没有进设置（不在白名单 → 丢弃）')
+  const before = env.spawns.length
+  const b = res()
+  await sysbeep.handler(postReq({ kind: 'complete' }), b.res)
+  await new Promise((r) => setTimeout(r, 20))
+  const vbsSpawn = env.spawns.slice(before).find((x) => x.argv && String(x.argv[0]).indexOf('wscript') >= 0)
+  ok(vbsSpawn !== undefined, 'sysbeep 仍会写 vbs 并 spawn wscript')
+  const written = Array.from(env.fsFiles.entries()).filter(([k]) => k.indexOf('.vbs') >= 0).map(([, v]) => v)
+  ok(written.length > 0 && written.every((t) => t.indexOf('CreateObject("WScript.Shell")') < 0), '生成的 vbs 里没有注入语句')
+}
+{
+  // ⑥ 磁盘上的旧脏值在加载时被丢弃（自愈）
+  const preseed = [{
+    key: 'n:C:/Users/ns/.dsh/plugins/dsh-chime-alerts/dsh-chime-alerts-settings.json',
+    value: JSON.stringify({ hostBeep: true, hostSounds: { complete: '../../evil.wav', jobfail: 'x"' } }),
+  }]
+  const { sysget } = await bootRoutes({ preseed })
+  const g = res()
+  await sysget.handler({ method: 'GET', headers: {} }, g.res)
+  const parsed = JSON.parse(g.state.body)
+  ok(parsed.hostSounds.complete === undefined && parsed.hostSounds.jobfail === undefined, '旧脏 hostSounds 加载后不再生效')
+}
+{
+  // ⑦ Linux：question 的 freedesktop 文件名不存在时按别名回退
+  const env = makeEnv({
+    harnessExtra: { chimePlatformOverride: 'linux' },
+    canberraProbe: false,
+    paplayProbe: true,
+    paplayFailIds: ['dialog-question'],
+  })
+  const before = env.spawns.length
+  await env.handlers.sysbeep({ kind: 'question' })
+  await new Promise((r) => setTimeout(r, 60))
+  const played = env.spawns.slice(before).filter((x) => x.argv && x.argv[0] === 'paplay').map((x) => String(x.argv[1]))
+  ok(played.some((p) => p.indexOf('dialog-question.oga') >= 0), 'linux：先试 dialog-question.oga')
+  ok(played.some((p) => p.indexOf('window-question.oga') >= 0), 'linux：失败后回退 window-question.oga（不再静音）')
+}
+{
+  // ⑧ 负能力缓存会重探（子服务晚挂载时不再永久灰掉）
+  const env = makeEnv({ noSubprocess: true })
+  const g1 = await env.handlers.sysget({})
+  ok(g1.capBeep === false, '无 subprocess → capBeep=false')
 }
 
 console.log(failures === 0 ? '\nall host tests passed' : `\n${failures} host test(s) FAILED`)

@@ -13,7 +13,8 @@ const outDir = join(root, '.chunks');
 const verifyOnly = process.argv.slice(2).includes('--verify');
 
 const targets = [
-  ['host', 'lib/host.js'],
+  // v0.6.1：host 的可粘贴形态由 tools/build-body.mjs 从 ESM 的 lib/host.js 生成
+  ['host', 'dynamic/host.body.js'],
   ['client', 'lib/client.js'],
 ];
 

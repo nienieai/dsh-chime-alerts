@@ -1138,7 +1138,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // 17. 提醒方式的新语义：三选一管的是**宿主**，宿主没接管时浏览器照常提醒。
 // 注意：complete 已不再由快照自检（v0.5.8 起由宿主 /events 转发），因此用 /events 驱动。
-async function driveHostEvent (seed, kind, sysget, hostname) {
+async function driveHostEvent (seed, kind, sysget, hostname, beforeEvent) {
   let seq = 0
   let batch = []
   const env = makeEnv(seed, undefined, (u) => {
@@ -1156,6 +1156,7 @@ async function driveHostEvent (seed, kind, sysget, hostname) {
   if (hostname !== undefined) env.win.location.hostname = hostname
   env.runIntervals()
   await flush()
+  if (typeof beforeEvent === 'function') beforeEvent(env)
   batch = [{ seq: seq + 1, kind, sessionId: 's1', at: Date.now() }]
   env.runIntervals()
   await flush()
@@ -1219,3 +1220,42 @@ async function driveHostEvent (seed, kind, sysget, hostname) {
     { ok: true, hostBeep: true, capBeep: true, hostMuted: { complete: true }, hostSounds: {}, dir: '/tmp/x' })
   ok(env.oscs.length === 0 && env.notifications.length === 0, '旧设置迁移：hostMuted 的事件整体不提醒')
 }
+
+// 18. v0.6.1 防双响不再压掉唯一能听见的那一声
+{
+  // 宿主开着、事件=响铃、防双响也开着，但宿主「没有蜂鸣能力」（capBeep=false）→
+  // 它根本发不出声，此时必须让浏览器响，否则这个事件彻底没声。
+  const env = await driveHostEvent(
+    { dedupe: true, kinds: { complete: { enabled: true, mode: 'beep' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: false, capNotify: true, eventModes: { complete: 'beep' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length > 0, '宿主无蜂鸣能力时，防双响不压浏览器（capBeep=false）')
+}
+{
+  // 宿主开着、事件=通知、防双响开着，但宿主没有通知能力 → 浏览器照常提醒
+  const env = await driveHostEvent(
+    { dedupe: true, kinds: { complete: { enabled: true, mode: 'notify' } } },
+    'complete',
+    { ok: true, hostBeep: true, capBeep: true, capNotify: false, eventModes: { complete: 'notify' }, hostMuted: {}, hostSounds: {}, dir: '/tmp/x' })
+  ok(env.oscs.length > 0, '宿主无通知能力时，防双响不压浏览器（capNotify=false）')
+}
+{
+  // 多标签页：另一个标签页持有领导锁 → 本页不发声（旧静态版 amLeader 是死代码）
+  const env = await driveHostEvent(
+    { kinds: { complete: { enabled: true, mode: 'off' } } },
+    'complete',
+    { ok: true, hostBeep: false, capBeep: true },
+    undefined,
+    (e) => { e.storage.set('dsh-chime-alerts-leader', 'other-tab:' + String(Date.now())) })
+  ok(env.oscs.length === 0, '别的标签页持锁时本页不重复发声（amLeader 生效）')
+}
+{
+  // 领导锁没人持有时本页正常发声（避免「修过头」变成永远不响）
+  const env = await driveHostEvent(
+    { kinds: { complete: { enabled: true, mode: 'off' } } },
+    'complete',
+    { ok: true, hostBeep: false, capBeep: true })
+  ok(env.oscs.length > 0, '无其他标签页持锁时本页正常发声')
+}
+console.log(failures === 0 ? '\nall client-web tests passed' : '\n' + failures + ' client-web test(s) FAILED')
+process.exitCode = failures === 0 ? 0 : 1
