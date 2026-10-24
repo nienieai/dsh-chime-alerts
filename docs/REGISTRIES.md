@@ -4,15 +4,15 @@
 官方 npm 发布路径见 [deepseek-harness 发布插件文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)
 （Koishi 生态规范，见 [Koishi 发布指南](https://koishi.chat/zh-CN/guide/develop/publish.html)）。
 
-> **状态（2026-10-23）**：GitHub 已发布 `v0.5.8`（tag + Release）。npm 的 `latest` 仍是 `dsh-chime-alerts@0.5.7`，`0.5.8` 由维护者在本地终端执行 `npm publish` 上传（账号启用了 2FA，无人值守环境过不了 EOTP）。本版适配 DSH 0.1.5 / 0.1.7 / 0.2.0 三代契约：九类提醒改由宿主 `/dsh-chime-alerts/events` 下发、后台任务改用 `jobs.events` + `removed` 判别前后台、失败按退出码判定、音频走共享主总线防削波、`AudioContext` 解锁排队补响、宿主通道退避重试与 `boot` 令牌守卫。
+> **状态（2026-10-24）**：`v0.5.9` 已打 tag 并推送（`refs/tags/v0.5.9` → 提交 `63aedc7`）；GitHub Release `v0.5.9` 与 npm 上传尚未执行。npm 的 `latest` 仍是 `dsh-chime-alerts@0.5.7`——`0.5.8` / `0.5.9` 都没上传，由维护者在本地终端执行 `npm publish`（账号启用了 2FA，无人值守环境过不了 EOTP）。因此在补发之前，`npm i dsh-chime-alerts` 装到的是 `0.5.7`：那份 `package.json` 的 `dsh.client.inject` 还列着已移除的 `@deepseek-ai/dsh-client-runtime`，且缺 `0.5.8` 的三代契约适配。`0.5.9` 的内容见 CHANGELOG（设置页 V3 / 工作区静音重写 / 界面语言跟随 DSH locale）。
 
 ## 发布前检查
 
 - [x] `package.json` 的 `repository.url` / `bugs.url` 换成真实仓库地址（`nienieai/dsh-chime-alerts`）
 - [ ] `LICENSE` 版权行换成作者真名/昵称
-- [x] npm 包名 `dsh-chime-alerts` 未被占用（已于 2026-08-25 发布 `0.5.6`，`0.5.7` 为当前 `latest`）
-- [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 静音按钮）
-- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`）
+- [x] npm 包名 `dsh-chime-alerts` 未被占用（已于 2026-08-25 发布 `0.5.6`，`0.5.7` 为当前 `latest`；`0.5.8` / `0.5.9` 待补发）
+- [ ] README 放一段演示 GIF（九声试听：完成/子任务/后台完成/授权/提问/评审/受阻/打断/失败 + 工作区静音标记）
+- [x] `npm publish`（package.json 已配 `publishConfig.access: public`；2026-08-25 首次发布 `0.5.6`；`0.5.9` 待维护者本地执行）
 - [x] 静态双端完成后再声明 `dsh.client`（v0.5.0 起已声明并实测：经典脚本封套 + `exports["./client"]`）
 
 ## 已实证的静态 bundle 模板
@@ -37,11 +37,11 @@
 ```json
 {
   "name": "dsh-chime-alerts",
-  "description": "十类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / 插件授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + 系统蜂鸣混合发声，每事件独立开关/声音/音量，工作区快捷静音。",
+  "description": "十类 Agent 事件的声音提醒：任务完成 / 子任务完成 / 后台任务完成 / 需要授权 / 插件授权 / Agent 提问 / 计划评审 / 目标受阻 / 其他打断 / 后台任务失败。浏览器 Web Audio 合成音 + 系统蜂鸣混合发声，每事件独立开关/声音/音量，按工作区静音（设置页分组 + 侧栏只读标记）。",
   "repo": "https://github.com/nienieai/dsh-chime-alerts",
   "npm": "dsh-chime-alerts",
   "tags": ["notification", "sound", "audio", "提醒", "声音"],
-  "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh plugin add dsh-chime-alerts（npm 已发布 v0.5.7）",
+  "install": "动态插件：cordis_define 粘贴 lib/host.js + lib/client.js；静态 npm：dsh plugin add dsh-chime-alerts（npm 当前发布 v0.5.7，v0.5.9 待补发）",
   "platforms": ["windows", "linux", "macos"],
   "license": "MIT"
 }
