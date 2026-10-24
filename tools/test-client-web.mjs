@@ -84,7 +84,7 @@ function makeEnv(seedLocal, seedLib, fetchHandler, audioFactory, localeId) {
 
   const intervalFns = []
   const ctx = {
-    // v0.5.9：语言以 DSH locale 服务为准；测试可注入一个只读的 locale 服务桩
+    // v0.5.10：语言以 DSH locale 服务为准；测试可注入一个只读的 locale 服务桩
     locale: localeId === undefined ? undefined : {
       getLocale: () => ({ active: localeId, locales: [], revision: 1 }),
       subscribe: () => () => {}
@@ -222,7 +222,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 {
   const env = makeEnv()
   ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && String(r.options.id).indexOf('chime') === 0), '注册设置分区 chime')
-  // v0.5.9：分区 id 固定（不再随语言变 chime-zh / chime-en），导航文字靠 label thunk
+  // v0.5.10：分区 id 固定（不再随语言变 chime-zh / chime-en），导航文字靠 label thunk
   const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
   ok(reg.options.id === 'chime-alerts', '分区 id 固定为 chime-alerts（不随语言变化）')
   ok(typeof reg.options.label === 'function', '分区 label 是 thunk（外壳每次投影重读）')
@@ -551,7 +551,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(page.filter((n) => n.type === 'input' && n.props && n.props.type === 'range' && n.props.min === 0 && n.props.max === 100).length === 10, '每个事件都有常驻音量滑条（不再折叠隐藏）')
 }
 
-// 9a2. v0.5.9：工作区静音改为设置页列表（不再爬 DOM 找工作区行）
+// 9a2. v0.5.10：工作区静音改为设置页列表（不再爬 DOM 找工作区行）
 {
   const env = makeEnv()
   env.setWorkspaces([
@@ -568,7 +568,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(saved.indexOf('w2') >= 0, '切换工作区开关写入 muted（持久化工作区 id）')
 }
 
-// 9a3. v0.5.9：语言跟随 DSH locale 服务（此前用 navigator.language，
+// 9a3. v0.5.10：语言跟随 DSH locale 服务（此前用 navigator.language，
 // 英文界面 + 中文系统时会整页中文）
 {
   const env = makeEnv(undefined, undefined, undefined, undefined, 'en-US')
@@ -576,12 +576,12 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(byText(page, 'Sound alerts') !== undefined, 'locale=en 时标题为英文（Sound alerts）')
   ok(byText(page, 'Browser sound') !== undefined, 'locale=en 时 chip 文案为英文')
   ok(byText(page, 'Workspace mute') !== undefined || true, '英文分组文案存在（无工作区时跳过）')
-  // v0.5.9：导航项文字同源 —— label thunk 在英文下必须返回英文（真机曾整页英文但导航仍是中文）
+  // v0.5.10：导航项文字同源 —— label thunk 在英文下必须返回英文（真机曾整页英文但导航仍是中文）
   const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
   ok(reg.options.label() === 'Sound Alerts', 'locale=en 时分区 label 返回英文 Sound Alerts')
   ok(reg.options.id === 'chime-alerts', 'locale=en 时分区 id 仍是 chime-alerts')
-  // v0.5.9：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
-  ok(byText(page, 'Static build v0.5.9') !== undefined, 'locale=en 时版本标注为英文')
+  // v0.5.10：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
+  ok(byText(page, 'Static build v0.5.10') !== undefined, 'locale=en 时版本标注为英文')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
@@ -591,7 +591,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const env = makeEnv()
   const calls = env.fetchCalls
   ok(calls.some((c) => c.url.indexOf('/sysget') >= 0), '启动时读取宿主设置（/sysget）')
-  // v0.5.9：宿主蜂鸣从「独立一行开关」改为顶部 chip（.snd-chip），按其文本定位
+  // v0.5.10：宿主蜂鸣从「独立一行开关」改为顶部 chip（.snd-chip），按其文本定位
   const root = env.slotRegs.find((r) => r.options.name === 'settings.section').component()
   const page = render(root)
   const nameOf = (x) => {
@@ -635,7 +635,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const before3 = calls.length
   hostPreviews[2].props.onClick()
   ok(calls.length > before3 && calls.slice(before3).some((c) => c.url.indexOf('/sysbeep') >= 0), '宿主试听调 /sysbeep')
-  ok(byText(page, '静态版 v0.5.9') !== undefined, '设置页底部标注版本 v0.5.9')
+  ok(byText(page, '静态版 v0.5.10') !== undefined, '设置页底部标注版本 v0.5.10')
 }
 
 // 9d. v0.5.6：useVersion 必须函数式更新（setState(x => x + 1)）。闭包捕获初值
@@ -926,7 +926,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(env.oscs.length > n0, '恢复后宿主事件照常播放')
 }
 
-// 15. v0.5.9：设置导航项图标改为按文字定位（假 DOM 驱动真实代码路径）
+// 15. v0.5.10：设置导航项图标改为按文字定位（假 DOM 驱动真实代码路径）
 // 回归背景：旧实现用 `.VOzbGW_navCell:nth-child(5)`（外壳混淆类名 + 硬编码序号），
 // 外壳一改就整条静默失效——真机上导航项退回默认齿轮，且没有任何报错。
 {

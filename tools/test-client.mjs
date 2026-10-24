@@ -511,12 +511,12 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
   const comp = env.slotRegs.find((r) => r.options.name === 'settings.section').component
   const page = render(comp())
   ok(env.slotRegs.some((r) => r.options.name === 'settings.section' && (typeof r.options.label === 'function' ? r.options.label() : r.options.label) === 'Sound Alerts'), '英文分区标题 Sound Alerts')
-  // v0.5.9：id 固定、label 是 thunk（真机曾因字符串 label + 换 id 硬刷导致导航项不跟语言）
+  // v0.5.10：id 固定、label 是 thunk（真机曾因字符串 label + 换 id 硬刷导致导航项不跟语言）
   {
     const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
     ok(reg.options.id === 'chime-alerts', '英文下分区 id 固定为 chime-alerts')
     ok(typeof reg.options.label === 'function', '分区 label 是 thunk')
-    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.9') === 0), '英文版本标注 Dynamic build v0.5.9')
+    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.5.10') === 0), '英文版本标注 Dynamic build v0.5.10')
   }
   ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All muted')), '英文批量按钮 All muted')
   const titles = page.filter((n) => n.props.className === 'snd-grp-name').map((n) => n.children[0])
@@ -563,7 +563,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     String(n.children[0]).indexOf('my.mp3') >= 0), '音频库条目出现在声音下拉（所有事件共享）')
 }
 
-// 13. v0.5.9：导航图标与工作区标记走真实 DOM 路径（假 DOM 驱动）
+// 13. v0.5.10：导航图标与工作区标记走真实 DOM 路径（假 DOM 驱动）
 // 回归背景之一：这段代码此前把需要重新赋值的绑定写成了 const（`for (const i = 0; …)`、
 // `const titleEl = null` 之后再赋值），运行时必抛 TypeError，又被外层 try/catch 吞掉——
 // 动态安装下工作区标记从来不显示，且没有任何日志可查。
