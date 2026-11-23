@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs'
 import { installFakeDom } from './fake-dom.mjs'
 
 const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+// 版本号从 package.json 取，避免发版时测试里的硬编码字符串也跟着漂（0.6.1 就漂过一次）
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 // v0.6.0：每个事件默认「关」。需要出声的用例显式种下 beep；makeEnv 会给种子里
 // 没写 mode 的事件补 'beep'（见其注释），所以这里只列事件名。
 const BEEP_SEED = {
@@ -578,7 +580,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10))
     const reg = env.slotRegs.find((r) => r.options.name === 'settings.section')
     ok(reg.options.id === 'chime-alerts', '英文下分区 id 固定为 chime-alerts')
     ok(typeof reg.options.label === 'function', '分区 label 是 thunk')
-    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v0.6.0') === 0), '英文版本标注 Dynamic build v0.5.10')
+    ok(page.some((n) => n.type === 'div' && n.children !== undefined && String(n.children[0]).indexOf('Dynamic build v' + VERSION) === 0), '英文版本标注 Dynamic build v' + VERSION)
   }
   ok(page.some((n) => n.type === 'button' && n.children !== undefined && n.children.some((c) => c === 'All off')), '英文批量按钮 All off')
   const titles = page.filter((n) => n.props.className === 'snd-grp-name').map((n) => n.children[0])

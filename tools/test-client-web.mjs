@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs'
 import { installFakeDom } from './fake-dom.mjs'
 
 const source = readFileSync(new URL('../lib/client.web.js', import.meta.url), 'utf8')
+// 版本号从 package.json 取，避免发版时测试里的硬编码字符串也跟着漂（0.6.1 就漂过一次）
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
 let failures = 0
 const ok = (cond, label) => {
@@ -602,7 +604,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   ok(reg.options.label() === 'Sound Alerts', 'locale=en 时分区 label 返回英文 Sound Alerts')
   ok(reg.options.id === 'chime-alerts', 'locale=en 时分区 id 仍是 chime-alerts')
   // v0.5.10：版本号文案也是函数求值（曾把 T() 写在模块作用域，加载即冻结成中文）
-  ok(byText(page, 'Static build v0.6.0') !== undefined, 'locale=en 时版本标注为英文')
+  ok(byText(page, 'Static build v' + VERSION) !== undefined, 'locale=en 时版本标注为英文')
 }
 
 // 9b. 宿主设置同步：启动读 /sysget；开关点击走 /sysset
@@ -707,7 +709,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
   const before4 = calls.length
   testBtn.props.onClick()
   ok(calls.length > before4 && calls.slice(before4).some((c) => c.url.indexOf('/sysnotify') >= 0), '测试通知调 /sysnotify')
-  ok(byText(page, '静态版 v0.6.0') !== undefined, '设置页底部标注版本 v0.6.0')
+  ok(byText(page, '静态版 v' + VERSION) !== undefined, '设置页底部标注版本 v' + VERSION)
 }
 
 // 9f. v0.6.0：默认全关 —— 新装用户打开设置页时没有任何宿主提醒动作，也不会碰 PowerShell。
