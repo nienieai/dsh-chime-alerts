@@ -51,7 +51,7 @@
 | 要求 | 状态 |
 |---|---|
 | `dsh.bundle.patch` + `dsh.client` 声明 | ✅ `cordis.patch.yml` + `platform: web` |
-| README 安装命令 | ✅ `dsh plugin --profile web add dsh-chime-alerts` |
+| README 安装命令 | ✅ `dsh plugin --profile desktop add dsh-chime-alerts`（并注明纯 Web 部署换成 `--profile web`） |
 | SPDX 许可证 | ✅ MIT |
 | id 规范 `^[a-z0-9]+(-[a-z0-9]+)*$` | ✅ `dsh-chime-alerts` |
 | 公开仓库 + `dsh-plugin` 话题 | ✅ 校验：`api.github.com/repos/nienieai/dsh-chime-alerts/topics` |
@@ -71,9 +71,9 @@
 
 - [x] `repository.url` / `bugs.url` 指向真实仓库
 - [ ] `LICENSE` 版权行换成真实作者名
-- [ ] README 放演示 GIF
+- [x] README 放真实界面截图（`docs/screenshots/`，工作区名为示例）
 - [x] 静态双端（`exports["./client"]` + `dsh.client`）实测可用
-- [x] `npm publish`（`latest` 当前为 `0.5.10`；`0.6.0` 未发布）
+- [ ] `npm publish` 0.6.1（`latest` 当前为 `0.5.10`；`0.6.0` / `0.6.1` 均未发布）
 - [x] 安全加固（v0.6.1）：端点鉴权、请求体上限、试听限流、宿主音白名单
 
 ## 四、发布命令（备忘）

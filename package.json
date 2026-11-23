@@ -32,6 +32,8 @@
     "dynamic",
     "cordis.patch.yml",
     "docs",
+    "!docs/screenshots",
+    "README.en.md",
     "SECURITY.md",
     "CHANGELOG.md"
   ],

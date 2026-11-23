@@ -14,6 +14,8 @@
 - **P2 · 复位/迁移/同步**：`恢复默认` 现在会把 `eventModes` 一起推给宿主（否则界面全关、后台仍响）；静态版补上旧存储键与「静音按标题 → 按 workspaceId」两处迁移；多标签页设置加了 `storage` 监听；`goalblocked` 首帧只建基线不误报；轮询加了 in-flight 守卫。
 - **P2 · Linux `question` 事件无声（已修）**：freedesktop 主题只有 `window-question.oga`，没有 `dialog-question.oga`，`canberra` 走主题查找能响、`paplay` 回退会失败。现在按别名回退（已在 Ubuntu 22.04 实测：`paplay dialog-question` 返回 1、`window-question` 返回 0）。
 - **工程侧**：`lib/host.js` 改成 ESM 模块，`lib/index.js` 直接 import，发布物里**不再有 `new Function`**；动态安装的粘贴体由 `tools/build-body.mjs` 生成到 `dynamic/host.body.js`（`npm run check` 校验同步）。`tools/cdp-shot.mjs` 不再用 `process.exit`（仓库静态扫描不再被判 critical）。补 `SECURITY.md`；`engines` 声明 `node >=22.19` 与 `engines.dsh`。
+- **P3 · 设置页页脚版本号（已修）**：页脚那句「静态版 / 动态版 vX.Y.Z」是手写常量，0.6.0 → 0.6.1 时忘了改，界面仍显示 v0.6.0。现在两处改成 v0.6.1，并在 `tools/syntax-check.mjs` 里与 `package.json.version` 比对，漏改直接 FAIL。
+- **文档**：README 重写为面向使用者的版本（特性 / 安装 / 跨平台 / 隐私 / 常见问题）并新增英文版 `README.en.md`；新增 `docs/INSTALL.md`（静态与动态安装、卸载、排错）与 `docs/TECHNICAL.md`（架构、事件契约、端点与鉴权、测试与发版）；补真实界面截图 `docs/screenshots/`，其中的工作区名称已替换为示例名。
 - 测试 **460** 项（宿主 187 / 动态客户端 140 / 静态客户端 133），新增鉴权、限流、请求体上限、白名单、VBS 注入、Linux 回退、能力位去重等 26 项回归。
 
 ## v0.6.0
