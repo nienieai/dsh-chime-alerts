@@ -73,17 +73,17 @@
 - [ ] `LICENSE` 版权行换成真实作者名
 - [x] README 放真实界面截图（`docs/screenshots/`，工作区名为示例）
 - [x] 静态双端（`exports["./client"]` + `dsh.client`）实测可用
-- [ ] `npm publish` 0.6.1（`latest` 当前为 `0.5.10`；`0.6.0` / `0.6.1` 均未发布）
+- [x] `npm publish` 0.6.1（2026-11-24 发布，`latest` 指向 0.6.1；`v0.6.0` → `348f155`、`v0.6.1` → `a3eb6e5` 两个 tag 均已推送）
 - [x] 安全加固（v0.6.1）：端点鉴权、请求体上限、试听限流、宿主音白名单
 
 ## 四、发布命令（备忘）
 
 ```sh
-npm test                       # 460 项断言
-npm run check                  # 语法 + 生成物一致性
+npm test                       # 460 项断言（宿 187 / 动态 140 / 静态 133）
+npm run check                  # 语法 + 版本一致性 + 生成物一致性
 npm pack --dry-run             # 核对发布物清单
 npm publish                    # 需要维护者终端做 2FA（--otp 或网页 /auth/cli/*）
-git tag v0.6.x && git push origin v0.6.x
+git tag -a v0.6.x -m "v0.6.x" && git push origin v0.6.x
 ```
 
 ## 五、参考
